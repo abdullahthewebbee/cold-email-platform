@@ -43,3 +43,6 @@ tasks.md
 quickly.db
 quickly.db-*
 
+
+*.backup
+

@@ -39,3 +39,7 @@ AGENTS.md
 tasks.md
 .omo/
 .commandcode/
+.env
+quickly.db
+quickly.db-*
+

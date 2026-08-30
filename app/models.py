@@ -39,6 +39,26 @@ def _make_open_token() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Multi-tenancy
+# ---------------------------------------------------------------------------
+
+class Organization(Base):
+    """A tenant. All Inboxes, Leads, Campaigns, and Webhooks belong to exactly
+    one Organization. Users belong to an Organization via User.org_id.
+
+    NOTE: AppSetting (OAuth app credentials, etc.) remains platform-level,
+    not per-organization, in this iteration. Per-tenant OAuth credentials
+    is a larger feature (each org would need its own Google Cloud project)
+    and is intentionally deferred.
+    """
+    __tablename__ = "organization"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    users = relationship("User", back_populates="organization")
+
+
+# ---------------------------------------------------------------------------
 # Authentication models
 # ---------------------------------------------------------------------------
 
@@ -49,6 +69,7 @@ class User(Base):
         UniqueConstraint("oauth_provider", "oauth_sub", name="uq_user_oauth"),
     )
     id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     username = Column(String(150), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=True)  # nullable for OAuth-only users
@@ -63,6 +84,7 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    organization = relationship("Organization", back_populates="users")
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
     notification_config = relationship("EmailNotificationConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan", order_by="Notification.created_at.desc()")
@@ -93,6 +115,7 @@ class APIKey(Base):
 class Inbox(Base):
     __tablename__ = "inbox"
     id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     display_name = Column(String(255), default="")
     max_emails_per_day = Column(Integer, default=50, nullable=False)
@@ -132,6 +155,7 @@ class Inbox(Base):
 class Lead(Base):
     __tablename__ = "lead"
     id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     email = Column(String(255), nullable=False, index=True)
     name = Column(String(255), default="")
     custom_data = Column(JSON, default=dict)  # e.g. {"company": "...", "title": "..."}
@@ -156,6 +180,7 @@ class Lead(Base):
 class Campaign(Base):
     __tablename__ = "campaign"
     id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     public_id = Column(String(16), unique=True, nullable=False, index=True, default=_make_public_id)
     name = Column(String(255), nullable=False)
     paused = Column(Boolean, default=False)  # If True, skip sending from this campaign
@@ -727,6 +752,7 @@ class Webhook(Base):
     """
     __tablename__ = "webhook"
     id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     url = Column(String(1024), nullable=False)
     secret = Column(String(512), default="")  # Bearer token for authentication
     events = Column(JSON, default=list)  # e.g. ["email.sent", "email.opened"]

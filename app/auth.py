@@ -224,6 +224,13 @@ async def get_current_user(
     return await resolve_current_user(request, db, credentials)
 
 
+
+async def get_current_org_id(user=Depends(get_current_user)) -> int | None:
+    """Returns the current user's organization id, or None if unassigned
+    (e.g. accounts created before multi-tenancy was added).
+    """
+    return user.org_id
+
 async def require_admin_short_session(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),

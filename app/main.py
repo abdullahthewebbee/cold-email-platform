@@ -48,10 +48,44 @@ from app.unibox import queue_sync_for_all_inboxes, run_unibox_sync_job
 from app import time as time_provider
 import app.scheduler as scheduler_mod
 
+async def _backfill_default_organization() -> None:
+    """One-time migration: ensure every existing User/Inbox/Lead/Campaign/Webhook
+    row has an org_id. Creates a single default Organization if needed and
+    assigns any row with org_id IS NULL to it. Safe to run on every startup —
+    it's a no-op once nothing is unassigned.
+    """
+    from sqlalchemy import select, update
+    from app.database import AsyncSessionLocal
+    from app.models import Organization, User, Inbox, Lead, Campaign, Webhook
 
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.org_id.is_(None)))
+        unassigned_users = result.scalars().all()
+        if not unassigned_users:
+            return  # nothing to backfill
+
+        logging.getLogger("emissary.migrations").info(
+            "Backfilling default organization for %d unassigned user(s)", len(unassigned_users)
+        )
+
+        org = Organization(name="Default Organization")
+        db.add(org)
+        await db.flush()  # get org.id without committing yet
+
+        for model in (User, Inbox, Lead, Campaign, Webhook):
+            await db.execute(
+                update(model).where(model.org_id.is_(None)).values(org_id=org.id)
+            )
+
+        await db.commit()
+        logging.getLogger("emissary.migrations").info(
+            "Default organization created (id=%s) and existing data assigned", org.id
+        )
+        
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await _backfill_default_organization()
 
     unibox_interval_minutes = 5
 

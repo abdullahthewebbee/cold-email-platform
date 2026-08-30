@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.models import User, Organization
 
 from app.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -217,7 +218,15 @@ async def _resolve_user_and_login(
         exist = await db.execute(select(User).where(User.username == username))
         if exist.scalar_one_or_none():
             username = f"{username}_{secrets.token_hex(3)}"
+
+        # Each new signup gets its own fresh Organization (single-user org for now;
+        # invite-teammate-to-existing-org is a separate future feature).
+        new_org = Organization(name=f"{username}'s Organization")
+        db.add(new_org)
+        await db.flush()  # get new_org.id without committing yet
+
         user = User(
+            org_id=new_org.id,
             username=username,
             email=email,
             password_hash=None,

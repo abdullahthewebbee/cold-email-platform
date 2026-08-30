@@ -220,8 +220,8 @@ async def create_inbox(data: InboxCreate, db: AsyncSession = Depends(get_db), or
 
 
 @router.get("/{inbox_id}", response_model=InboxResponse)
-async def get_inbox(inbox_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+async def get_inbox(inbox_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
+    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")
@@ -252,11 +252,12 @@ async def get_inbox(inbox_id: int, db: AsyncSession = Depends(get_db)):
 async def beacon_pending_registration_count(
     inbox_id: int,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Count of tracking registrations that would sync to Beacon (development only)."""
     if os.environ.get("QUICKLY_MODE", "development").lower() == "production":
         raise HTTPException(404, "Not found")
-    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")
@@ -272,8 +273,9 @@ async def update_inbox(
     data: InboxUpdate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
-    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")
@@ -363,9 +365,10 @@ async def beacon_connect(
     inbox_id: int,
     body: BeaconConnectRequest,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Register this Quickly inbox with a Beacon instance using its setup URL."""
-    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")
@@ -382,17 +385,18 @@ async def beacon_connect_from_inbox(
     inbox_id: int,
     body: BeaconConnectFromInboxRequest,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Connect this inbox to the same Beacon as *source_inbox_id* without pasting the setup URL."""
     if inbox_id == body.source_inbox_id:
         raise HTTPException(422, "source_inbox_id must be a different inbox")
 
-    tgt = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+    tgt = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = tgt.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")
 
-    src = await db.execute(select(Inbox).where(Inbox.id == body.source_inbox_id))
+    src = await db.execute(select(Inbox).where(Inbox.id == body.source_inbox_id, Inbox.org_id == org_id))
     source = src.scalar_one_or_none()
     if not source:
         raise HTTPException(404, "Source inbox not found")
@@ -407,9 +411,9 @@ async def beacon_connect_from_inbox(
 
 
 @router.post("/{inbox_id}/beacon/disconnect", response_model=InboxResponse)
-async def beacon_disconnect(inbox_id: int, db: AsyncSession = Depends(get_db)):
+async def beacon_disconnect(inbox_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     """Clear Beacon configuration for this inbox."""
-    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")
@@ -450,13 +454,14 @@ async def pause_inbox(
     body: PauseInboxRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Pause an inbox. Choose what happens to leads currently assigned to it:
     - action='pause_leads': set sending_paused=True on all affected CampaignLeads.
     - action='reassign': pause and run a full recalculation so remaining inboxes
       automatically absorb the leads.
     """
-    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")
@@ -515,6 +520,7 @@ async def unpause_inbox(
     inbox_id: int,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Resume a paused inbox.
 
@@ -522,7 +528,7 @@ async def unpause_inbox(
     (i.e. leads in campaigns using this inbox that have sending_paused=True)
     and triggers a full queue recalculation so they get new slots.
     """
-    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")
@@ -569,10 +575,9 @@ async def unpause_inbox(
     await db.commit()
     return inbox
 
-
 @router.delete("/{inbox_id}")
-async def delete_inbox(inbox_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+async def delete_inbox(inbox_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
+    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")
@@ -594,6 +599,7 @@ async def delete_inbox(inbox_id: int, db: AsyncSession = Depends(get_db)):
 async def generate_connect_url(
     inbox_id: int,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Generate a one-time URL to pre-authenticate the OAuth flow for this inbox.
 
@@ -601,7 +607,7 @@ async def generate_connect_url(
     opened in any browser (including one where the user is *not* logged into Quickly)
     to kick off the OAuth consent flow for the inbox's configured provider.
     """
-    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id))
+    result = await db.execute(select(Inbox).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
     if not inbox:
         raise HTTPException(404, "Inbox not found")

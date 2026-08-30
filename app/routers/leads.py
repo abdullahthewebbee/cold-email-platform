@@ -13,8 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.campaign_lead_status import LEAD_INTERESTS, normalize_enrollment_status, normalize_interest
-from app.database import get_db
+from app.auth import get_current_org_id
 from app.lead_inbox_resolution import from_inbox_email_by_lead_campaign
+from app.database import get_db
 from app.models import (
     Campaign,
     CampaignLead,
@@ -517,17 +518,17 @@ async def list_leads(
     status: str | None = Query(None),
     bad_only: bool = Query(
         False,
-        description="If true, narrow to bounced/invalid-style leads; stacks with status and interest when those are set.",
-    ),
+        description="If true, narrow to bounced/invalid-style leads; stacks with status and interest when those are set.",    ),
     interest: str | None = Query(
         None,
         description="Filter by per-enrollment interest: interested, not_interested, out_of_office, auto_reply, or unset (cleared / null). Stacks with status and bad_only.",
     ),
     q: str | None = Query(None, description="Search email or name (substring)"),
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     intr = _optional_interest_for_stmt(interest)
-    stmt = _build_leads_stmt(q=q, status=status, bad_only=bad_only, interest=intr)
+    stmt = _build_leads_stmt(q=q, status=status, bad_only=bad_only, interest=intr).where(Lead.org_id == org_id)
     result = await db.execute(stmt)
     leads = result.scalars().all()
     ids = [x.id for x in leads]
@@ -641,13 +642,14 @@ async def bulk_delete_leads(
     body: LeadBulkDeleteRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     if not body.lead_ids:
         return {"ok": True, "deleted": 0}
     all_campaign_ids: set[int] = set()
     deleted = 0
     for lead_id in body.lead_ids:
-        res = await db.execute(select(Lead).where(Lead.id == lead_id))
+        res = await db.execute(select(Lead).where(Lead.id == lead_id, Lead.org_id == org_id))
         lead = res.scalar_one_or_none()
         if not lead:
             continue
@@ -678,6 +680,7 @@ async def bulk_update_lead_status(
     body: LeadBulkStatusRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     if not body.lead_ids:
         return {"ok": True, "updated": 0}
@@ -685,7 +688,10 @@ async def bulk_update_lead_status(
     changed = False
     updated = 0
     for lead_id in body.lead_ids:
-        res = await db.execute(select(CampaignLead).where(CampaignLead.lead_id == lead_id))
+        res = await db.execute(
+            select(CampaignLead).join(Lead, CampaignLead.lead_id == Lead.id)
+            .where(CampaignLead.lead_id == lead_id, Lead.org_id == org_id)
+        )
         for cl in res.scalars().all():
             if cl.enrollment_status != target:
                 cl.enrollment_status = target
@@ -705,6 +711,7 @@ async def bulk_recover_leads(
     body: LeadBulkRecoverRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Recover many leads: one verification batch or one queue recalculation."""
     if not body.items:
@@ -725,7 +732,7 @@ async def bulk_recover_leads(
     for item in body.items:
         lead_id = item.lead_id
         res = await db.execute(
-            _lead_query_with_campaigns().where(Lead.id == lead_id),
+            _lead_query_with_campaigns().where(Lead.id == lead_id, Lead.org_id == org_id),
         )
         lead = res.scalar_one_or_none()
         if not lead:
@@ -736,7 +743,7 @@ async def bulk_recover_leads(
             errors.append({"lead_id": lead_id, "detail": "empty_email"})
             continue
         dup = await db.execute(
-            select(Lead.id).where(Lead.email == norm, Lead.id != lead_id),
+            select(Lead.id).where(Lead.email == norm, Lead.id != lead_id, Lead.org_id == org_id),
         )
         if dup.scalar_one_or_none():
             errors.append({"lead_id": lead_id, "detail": "duplicate_email"})
@@ -756,6 +763,7 @@ async def import_recover_csv(
     file: UploadFile = File(...),
     verify_emails: bool = Query(True),
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """CSV with id + email columns (and optional extra columns). Uses same recovery rules as bulk-recover."""
     raw = await file.read()
@@ -816,9 +824,13 @@ async def create_lead(data: LeadCreate, db: AsyncSession = Depends(get_db)):
 async def mark_lead_replied(
     body: MarkReplied,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     lead_id = body.lead_id
     campaign_id = body.campaign_id
+    lead_check = await db.execute(select(Lead.id).where(Lead.id == lead_id, Lead.org_id == org_id))
+    if not lead_check.scalar_one_or_none():
+        raise HTTPException(404, "Lead not found")
     existing = await db.execute(
         select(LeadReply).where(
             LeadReply.lead_id == lead_id,
@@ -832,9 +844,9 @@ async def mark_lead_replied(
 
 
 @router.get("/{lead_id}", response_model=LeadResponse)
-async def get_lead(lead_id: int, db: AsyncSession = Depends(get_db)):
+async def get_lead(lead_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     result = await db.execute(
-        _lead_query_with_campaigns().where(Lead.id == lead_id),
+        _lead_query_with_campaigns().where(Lead.id == lead_id, Lead.org_id == org_id),
     )
     lead = result.scalar_one_or_none()
     if not lead:
@@ -859,8 +871,9 @@ async def update_lead(
     data: LeadUpdate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
-    result = await db.execute(select(Lead).where(Lead.id == lead_id))
+    result = await db.execute(select(Lead).where(Lead.id == lead_id, Lead.org_id == org_id))
     lead = result.scalar_one_or_none()
     if not lead:
         raise HTTPException(404, "Lead not found")
@@ -968,8 +981,9 @@ async def delete_lead(
     lead_id: int,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
-    result = await db.execute(select(Lead).where(Lead.id == lead_id))
+    result = await db.execute(select(Lead).where(Lead.id == lead_id, Lead.org_id == org_id))
     lead = result.scalar_one_or_none()
     if not lead:
         raise HTTPException(404, "Lead not found")
@@ -995,7 +1009,10 @@ async def delete_lead(
 
 
 @router.get("/{lead_id}/history")
-async def get_lead_history(lead_id: int, db: AsyncSession = Depends(get_db)):
+async def get_lead_history(lead_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
+    lead_check = await db.execute(select(Lead.id).where(Lead.id == lead_id, Lead.org_id == org_id))
+    if not lead_check.scalar_one_or_none():
+        raise HTTPException(404, "Lead not found")
     result = await db.execute(
         select(EmailLog, Campaign.name)
         .join(Campaign, EmailLog.campaign_id == Campaign.id)
@@ -1016,8 +1033,8 @@ async def get_lead_history(lead_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{lead_id}/replies")
-async def get_lead_replies(lead_id: int, db: AsyncSession = Depends(get_db)):
-    exists = await db.execute(select(Lead.id).where(Lead.id == lead_id))
+async def get_lead_replies(lead_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
+    exists = await db.execute(select(Lead.id).where(Lead.id == lead_id, Lead.org_id == org_id))
     if not exists.scalar_one_or_none():
         raise HTTPException(404, "Lead not found")
     result = await db.execute(

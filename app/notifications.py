@@ -111,7 +111,7 @@ def build_notification(event_type: str, data: dict[str, Any]) -> dict[str, Any]:
             f"Please reconnect the inbox."
         )
     else:
-        title = f"Quickly notification — {event_type}"
+        title = f"Emissary notification — {event_type}"
         message = f"Event: {event_type} at {ts}"
 
     return {

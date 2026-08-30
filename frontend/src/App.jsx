@@ -11,6 +11,7 @@ import Analytics from './pages/Analytics';
 import Unibox from './pages/Unibox';
 import DeliverabilityTips from './pages/DeliverabilityTips';
 import SystemHealth from './pages/SystemHealth';
+import DnsDoctor from './pages/DnsDoctor';
 import Leads from './pages/Leads';
 import LeadDetail from './pages/LeadDetail';
 import Notifications from './pages/Notifications';
@@ -69,6 +70,7 @@ function AppRoutes() {
               <Route path="/settings" element={<Settings />} />
               <Route path="/deliverability-tips" element={<DeliverabilityTips />} />
               <Route path="/system-health" element={<SystemHealth />} />
+              <Route path="/dns-doctor" element={<DnsDoctor />} />
               <Route path="/notifications" element={<Notifications />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>

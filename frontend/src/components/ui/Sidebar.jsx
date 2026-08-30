@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import logo from '../../assets/quickly_logo.svg';
+import logo from '../../assets/Emissary_logo.svg';
 import {
   RiSendPlaneLine,
   RiLineChartLine,
@@ -13,6 +13,7 @@ import {
   RiHeartPulseLine,
   RiContactsLine,
   RiNotification3Line,
+  RiShieldCheckLine,
 } from 'react-icons/ri';
 import { useUniboxNotifications } from '../../context/UniboxNotificationsContext';
 import { useNotifications } from '../../context/NotificationsContext';
@@ -28,6 +29,7 @@ const links = [
   { to: '/unibox', label: 'Unibox', icon: <RiInboxLine size={20} /> },
   { to: '/schedule', label: 'Schedule', icon: <RiCalendarScheduleLine size={20} /> },
   { to: '/notifications', label: 'Notifications', icon: <RiNotification3Line size={20} /> },
+  { to: '/dns-doctor', label: 'DNS Doctor', icon: <RiShieldCheckLine size={20} /> },
   { to: '/settings#general', label: 'Settings', icon: <RiSettingsLine size={20} /> },
 ];
 
@@ -75,9 +77,9 @@ function buildBugUrl() {
     '**Environment**',
     `- OS: ${getOS()}`,
     `- Browser: ${getBrowser()}`,
-    `- Quickly version: ${APP_VERSION}`,
+    `- Emissary version: ${APP_VERSION}`,
   ].join('\n');
-  return `https://github.com/AbdelftahZowail/Quickly/issues/new?labels=bug&title=%5BBug%5D%20&body=${encodeURIComponent(body)}`;
+  return `https://github.com/AbdelftahZowail/Emissary/issues/new?labels=bug&title=%5BBug%5D%20&body=${encodeURIComponent(body)}`;
 }
 
 function buildFeatureUrl() {
@@ -92,7 +94,7 @@ function buildFeatureUrl() {
     '',
     '**Additional context**',
   ].join('\n');
-  return `https://github.com/AbdelftahZowail/Quickly/issues/new?labels=enhancement&title=%5BFeature%5D%20&body=${encodeURIComponent(body)}`;
+  return `https://github.com/AbdelftahZowail/Emissary/issues/new?labels=enhancement&title=%5BFeature%5D%20&body=${encodeURIComponent(body)}`;
 }
 
 export default function Sidebar({ collapsed, onToggle }) {
@@ -136,9 +138,9 @@ export default function Sidebar({ collapsed, onToggle }) {
         }`}
         title="Home"
       >
-        <img src={logo} alt="Quickly logo" className="h-8 w-8" />
+        <img src={logo} alt="Emissary logo" className="h-8 w-8" />
         {!collapsed && (
-          <span className="text-primary font-extrabold text-xl">Quickly</span>
+          <span className="text-primary font-extrabold text-xl">Emissary</span>
         )}
       </NavLink>
       <div className="flex flex-col gap-2">

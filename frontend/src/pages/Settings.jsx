@@ -879,7 +879,7 @@ export default function Settings() {
         <section id="settings-gmail-sync" className="mb-10 scroll-mt-6">
           <h2 className="text-lg font-semibold mb-1 border-b pb-2">Gmail Sync</h2>
           <p className="text-xs text-gray-500 mb-4">
-            Configure how Quickly detects replies from Gmail inboxes. Optional — polling works
+            Configure how Emissary detects replies from Gmail inboxes. Optional — polling works
             without these settings, but push notifications make reply detection instant.
           </p>
           <div className="space-y-4">
@@ -1062,7 +1062,7 @@ export default function Settings() {
                   {!backupMeta.local_disk_available && (
                     <p className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
                       Saving backups on the server requires the deployment to set{' '}
-                      <code className="text-[11px]">QUICKLY_LOCAL_DISK_BACKUPS</code> and a persistent{' '}
+                      <code className="text-[11px]">Reach_LOCAL_DISK_BACKUPS</code> and a persistent{' '}
                       <code className="text-[11px]">backups</code> folder (Docker Compose in this repo does). On hosts without that, use{' '}
                       <strong>POST to webhook</strong> below.
                     </p>
@@ -1194,7 +1194,7 @@ export default function Settings() {
                     const blob = await res.blob();
                     const dispo = res.headers.get('Content-Disposition');
                     const m = dispo && dispo.match(/filename="([^"]+)"/);
-                    const name = m ? m[1] : 'quickly-backup.qbk';
+                    const name = m ? m[1] : 'Emissary-backup.qbk';
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
                     a.download = name;
@@ -1970,7 +1970,7 @@ export default function Settings() {
         <section id="settings-mcp" className="mb-10 scroll-mt-6">
           <h2 className="text-lg font-semibold mb-1 border-b pb-2">MCP (AI agents)</h2>
           <p className="text-xs text-gray-500 mb-4">
-            Quickly exposes a remote MCP endpoint over HTTPS. Create an API key under API keys, then point Cursor at it with
+            Emissary exposes a remote MCP endpoint over HTTPS. Create an API key under API keys, then point Cursor at it with
             <code className="mx-1 text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">npx mcp-remote</code>
             (Node 18+). No Python install on your machine.
           </p>
@@ -2000,10 +2000,10 @@ export default function Settings() {
             <h3 className="text-sm font-semibold pt-2">3. Cursor MCP config</h3>
             <p className="text-xs text-gray-500">
               Merge the JSON into your MCP settings. Replace
-              <code className="mx-1 text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">QUICKLY_MCP_API_KEY</code>
+              <code className="mx-1 text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">Reach_MCP_API_KEY</code>
               with a key from the API keys section. To use a JWT instead, use
               <code className="mx-1 text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">--header</code>
-              <code className="text-[10px] font-mono">{'Authorization:${QUICKLY_MCP_AUTH}'}</code>
+              <code className="text-[10px] font-mono">{'Authorization:${Reach_MCP_AUTH}'}</code>
               {' '}and set the env value to <code className="text-[10px] font-mono">Bearer …</code>
               (same as REST). App base URL:
               {mcpSetup?.api_base_url ? (

@@ -24,7 +24,7 @@ function _authHeaders() {
 let _refreshPromise = null;
 
 /** Set by server on successful POST /settings/backup/restore/execute so the SPA reloads with fresh data. */
-const RELOAD_AFTER_RESTORE_HEADER = 'X-Quickly-Reload';
+const RELOAD_AFTER_RESTORE_HEADER = 'X-Emissary-Reload';
 
 function scheduleReloadIfRestoreComplete(res) {
   if (res.headers.get(RELOAD_AFTER_RESTORE_HEADER) === '1') {
@@ -79,7 +79,7 @@ async function request(path, options = {}) {
       return retryData;
     } catch {
       // Refresh failed – redirect to login
-      window.location.href = '/login';
+      _goToLogin();
       throw new Error('Session expired');
     }
   }
@@ -116,7 +116,7 @@ async function downloadRequest(path) {
       return res;
     } catch (e) {
       if (e.status) throw e;
-      window.location.href = '/login';
+      _goToLogin();
       throw new Error('Session expired');
     }
   }
@@ -157,7 +157,7 @@ async function downloadPostRequest(path, data) {
       return res;
     } catch (e) {
       if (e.status) throw e;
-      window.location.href = '/login';
+      _goToLogin();
       throw new Error('Session expired');
     }
   }
@@ -199,7 +199,7 @@ export const api = {
         }
         return retryRes.json();
       } catch {
-        window.location.href = '/login';
+        _goToLogin();
         throw new Error('Session expired');
       }
     }
@@ -237,7 +237,7 @@ export const api = {
         }
         return retryRes.json();
       } catch {
-        window.location.href = '/login';
+        _goToLogin();
         throw new Error('Session expired');
       }
     }

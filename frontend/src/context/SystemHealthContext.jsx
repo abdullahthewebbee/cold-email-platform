@@ -4,7 +4,7 @@ import { useAuth } from './AuthContext';
 
 const SystemHealthContext = createContext(null);
 
-const MUTE_KEY = 'quickly_health_muted_v1';
+const MUTE_KEY = 'Reach_health_muted_v1';
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 function loadMuted() {
@@ -248,7 +248,7 @@ function buildChecks(d) {
         if (beaconStatLvl === 'ok') beaconStatLvl = 'warning';
         beaconIssues.push({
           level: 'warning',
-          text: `Beacon registration count still mismatched for "${name}" (Quickly expects ${inbox.beacon_registration_expected}, Beacon has ${inbox.beacon_registration_actual}).`,
+          text: `Beacon registration count still mismatched for "${name}" (Emissary expects ${inbox.beacon_registration_expected}, Beacon has ${inbox.beacon_registration_actual}).`,
           fix: 'The server attempted a full resync during this health check. If this persists, check connectivity to Beacon.',
           action: { label: 'Open Inboxes', to: '/inboxes' },
         });

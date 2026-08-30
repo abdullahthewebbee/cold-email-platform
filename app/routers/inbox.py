@@ -14,7 +14,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, exists, update as sa_update
-
+from app.auth import get_current_user, get_current_org_id
 from app.database import get_db
 from app.models import Inbox, CampaignInbox, QueueSlot, EmailLog, CampaignLead
 from app.schemas import (
@@ -154,9 +154,9 @@ async def _maybe_complete_ramp_up(inbox: Inbox, db: AsyncSession) -> None:
 
 
 @router.get("", response_model=list[InboxResponse])
-async def list_inboxes(db: AsyncSession = Depends(get_db)):
+async def list_inboxes(db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     # fetch all inboxes first
-    result = await db.execute(select(Inbox).order_by(Inbox.id))
+    result = await db.execute(select(Inbox).where(Inbox.org_id == org_id).order_by(Inbox.id))
     inboxes = result.scalars().all()
 
     # compute how many emails have been sent today per inbox by grouping
@@ -192,10 +192,11 @@ async def list_inboxes(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=InboxResponse)
-async def create_inbox(data: InboxCreate, db: AsyncSession = Depends(get_db)):
+async def create_inbox(data: InboxCreate, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     # Normalise tracking domain: strip scheme, paths, whitespace
     td = _normalise_tracking_domain(data.tracking_domain)
     inbox = Inbox(
+        org_id=org_id,
         email=data.email,
         display_name=data.display_name,
         max_emails_per_day=data.max_emails_per_day,

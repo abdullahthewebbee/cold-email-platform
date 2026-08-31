@@ -18,6 +18,7 @@ from datetime import date
 from typing import List
 
 from app.database import get_db
+from app.auth import get_current_org_id
 from app.models import (
     Campaign,
     Sequence,
@@ -124,9 +125,9 @@ async def _get_inbox_ids_for_campaigns(db: AsyncSession, campaign_ids: list[int]
 
 
 @router.get("", response_model=list[CampaignResponse])
-async def list_campaigns(db: AsyncSession = Depends(get_db)):
+async def list_campaigns(db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     # retrieve base objects
-    result = await db.execute(select(Campaign).order_by(Campaign.priority, Campaign.id))
+    result = await db.execute(select(Campaign).where(Campaign.org_id == org_id).order_by(Campaign.priority, Campaign.id))
     campaigns = result.scalars().all()
     campaign_ids = [c.id for c in campaigns]
     inbox_map = await _get_inbox_ids_for_campaigns(db, campaign_ids)
@@ -281,10 +282,11 @@ async def campaigns_have_leads(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=CampaignResponse)
-async def create_campaign(data: CampaignCreate, db: AsyncSession = Depends(get_db)):
+async def create_campaign(data: CampaignCreate, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     # if not data.inbox_ids:
     #     raise HTTPException(400, "At least one inbox required")
     campaign = Campaign(
+        org_id=org_id,
         name=data.name,
         sending_days=data.sending_days,
         sending_hours_start=data.sending_hours_start,
@@ -360,8 +362,8 @@ async def reorder_campaigns(
 
 
 @router.get("/{campaign_id}", response_model=CampaignResponse)
-async def get_campaign(campaign_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
+async def get_campaign(campaign_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
+    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
     campaign = result.scalar_one_or_none()
     if not campaign:
         raise HTTPException(404, "Campaign not found")
@@ -430,8 +432,8 @@ async def get_campaign(campaign_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{campaign_id}")
-async def delete_campaign(campaign_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
+async def delete_campaign(campaign_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
+    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
     campaign = result.scalar_one_or_none()
     if not campaign:
         raise HTTPException(404, "Campaign not found")
@@ -481,8 +483,9 @@ async def update_campaign(
     data: CampaignUpdate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
-    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
+    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
     campaign = result.scalar_one_or_none()
     if not campaign:
         raise HTTPException(404, "Campaign not found")
@@ -602,9 +605,9 @@ async def update_campaign(
 
 
 @router.post("/{campaign_id}/duplicate", response_model=CampaignResponse)
-async def duplicate_campaign(campaign_id: int, db: AsyncSession = Depends(get_db)):
+async def duplicate_campaign(campaign_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     """Create a copy of a campaign with all its sequences, but no enrolled leads."""
-    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
+    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(404, "Campaign not found")
@@ -621,6 +624,7 @@ async def duplicate_campaign(campaign_id: int, db: AsyncSession = Depends(get_db
     
     # Create new campaign
     new_campaign = Campaign(
+        org_id=org_id,
         name=f"{original.name} (Copy)",
         sending_days=original.sending_days,
         sending_hours_start=original.sending_hours_start,
@@ -1947,6 +1951,7 @@ async def bulk_add_leads_to_campaign(
     verify_emails: bool = False,
     confirm_only: bool = False,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """
     Add one or more leads to a campaign.
@@ -2033,10 +2038,11 @@ async def bulk_add_leads_to_campaign(
 
         try:
             # Find or create lead by email
-            lead_result = await db.execute(select(Lead).where(Lead.email == email))
+            lead_result = await db.execute(select(Lead).where(Lead.email == email, Lead.org_id == org_id))
             lead = lead_result.scalar_one_or_none()
             if not lead:
                 lead = Lead(
+                    org_id=org_id,
                     email=email,
                     name=entry.name or "",
                     custom_data=entry.custom_data or {},
@@ -2623,6 +2629,7 @@ async def import_campaign_leads(
     verify_emails: bool = False,
     confirm_only: bool = False,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Import leads from a CSV file. Expects columns: email, name, and any custom fields."""
     campaign_result = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
@@ -2766,10 +2773,10 @@ async def import_campaign_leads(
             return None
 
         try:
-            lead_result = await db.execute(select(Lead).where(Lead.email == email))
+            lead_result = await db.execute(select(Lead).where(Lead.email == email, Lead.org_id == org_id))
             lead = lead_result.scalar_one_or_none()
             if not lead:
-                lead = Lead(email=email, name=name, custom_data=custom_data)
+                lead = Lead(org_id=org_id, email=email, name=name, custom_data=custom_data)
                 db.add(lead)
                 await db.flush()
             else:

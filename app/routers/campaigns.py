@@ -672,7 +672,10 @@ async def duplicate_campaign(campaign_id: int, db: AsyncSession = Depends(get_db
 
 # ---- Sequences ----
 @router.get("/{campaign_id}/sequences", response_model=list[SequenceResponse])
-async def list_sequences(campaign_id: int, db: AsyncSession = Depends(get_db)):
+async def list_sequences(campaign_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
+    campaign_check = await db.execute(select(Campaign.id).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
+    if not campaign_check.scalar_one_or_none():
+        raise HTTPException(404, "Campaign not found")
     result = await db.execute(
         select(Sequence)
         .options(selectinload(Sequence.variants))
@@ -681,16 +684,16 @@ async def list_sequences(campaign_id: int, db: AsyncSession = Depends(get_db)):
     )
     return result.scalars().all()
 
-
 @router.post("/{campaign_id}/sequences", response_model=SequenceResponse)
 async def create_sequence(
     campaign_id: int,
     data: SequenceCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
-    # Verify campaign exists
-    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
+    # Verify campaign exists and belongs to this org
+    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
     if not result.scalar_one_or_none():
         raise HTTPException(404, "Campaign not found")
     seq = Sequence(
@@ -734,11 +737,15 @@ async def update_sequence(
     data: SequenceUpdate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     result = await db.execute(
-        select(Sequence).where(
+        select(Sequence)
+        .join(Campaign, Sequence.campaign_id == Campaign.id)
+        .where(
             Sequence.id == sequence_id,
             Sequence.campaign_id == campaign_id,
+            Campaign.org_id == org_id,
         )
     )
     seq = result.scalar_one_or_none()
@@ -786,11 +793,15 @@ async def delete_sequence(
     sequence_id: int,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     result = await db.execute(
-        select(Sequence).where(
+        select(Sequence)
+        .join(Campaign, Sequence.campaign_id == Campaign.id)
+        .where(
             Sequence.id == sequence_id,
             Sequence.campaign_id == campaign_id,
+            Campaign.org_id == org_id,
         )
     )
     seq = result.scalar_one_or_none()
@@ -832,9 +843,10 @@ async def list_variants(
     campaign_id: int,
     sequence_id: int,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """List all A/B variants for a sequence step."""
-    seq = await _get_sequence_or_404(campaign_id, sequence_id, db)
+    seq = await _get_sequence_or_404(campaign_id, sequence_id, db, org_id)
     if getattr(seq, "sequence_type", "standard") == "personalized":
         return []
     result = await db.execute(
@@ -855,9 +867,10 @@ async def create_variant(
     sequence_id: int,
     data: SequenceVariantCreate,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Create a new A/B variant for a sequence step."""
-    seq = await _get_sequence_or_404(campaign_id, sequence_id, db)
+    seq = await _get_sequence_or_404(campaign_id, sequence_id, db, org_id)
     if getattr(seq, "sequence_type", "standard") == "personalized":
         raise HTTPException(400, "A/B variants are not supported for personalized sequences")
     variant = SequenceVariant(
@@ -886,9 +899,10 @@ async def update_variant(
     variant_id: int,
     data: SequenceVariantUpdate,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Update an A/B variant (partial update)."""
-    seq = await _get_sequence_or_404(campaign_id, sequence_id, db)
+    seq = await _get_sequence_or_404(campaign_id, sequence_id, db, org_id)
     if getattr(seq, "sequence_type", "standard") == "personalized":
         raise HTTPException(400, "A/B variants are not supported for personalized sequences")
     result = await db.execute(
@@ -923,9 +937,10 @@ async def delete_variant(
     sequence_id: int,
     variant_id: int,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Delete an A/B variant."""
-    seq = await _get_sequence_or_404(campaign_id, sequence_id, db)
+    seq = await _get_sequence_or_404(campaign_id, sequence_id, db, org_id)
     if getattr(seq, "sequence_type", "standard") == "personalized":
         raise HTTPException(400, "A/B variants are not supported for personalized sequences")
     result = await db.execute(
@@ -942,11 +957,14 @@ async def delete_variant(
     return {"ok": True}
 
 
-async def _get_sequence_or_404(campaign_id: int, sequence_id: int, db: AsyncSession) -> Sequence:
+async def _get_sequence_or_404(campaign_id: int, sequence_id: int, db: AsyncSession, org_id: int | None = None) -> Sequence:
     result = await db.execute(
-        select(Sequence).where(
+        select(Sequence)
+        .join(Campaign, Sequence.campaign_id == Campaign.id)
+        .where(
             Sequence.id == sequence_id,
             Sequence.campaign_id == campaign_id,
+            Campaign.org_id == org_id,
         )
     )
     seq = result.scalar_one_or_none()
@@ -954,10 +972,12 @@ async def _get_sequence_or_404(campaign_id: int, sequence_id: int, db: AsyncSess
         raise HTTPException(404, "Sequence not found")
     return seq
 
-
 # ---- Enrolled leads and queue ----
 @router.get("/{campaign_id}/leads")
-async def list_campaign_leads(campaign_id: int, db: AsyncSession = Depends(get_db)):
+async def list_campaign_leads(campaign_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
+    campaign_check = await db.execute(select(Campaign.id).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
+    if not campaign_check.scalar_one_or_none():
+        raise HTTPException(404, "Campaign not found")
     result = await db.execute(
         select(CampaignLead, Lead)
         .join(Lead, CampaignLead.lead_id == Lead.id)
@@ -1139,8 +1159,12 @@ async def patch_campaign_lead(
     payload: CampaignLeadEnrollmentPatch,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Update enrollment status, interest, and/or sending_paused for this campaign."""
+    campaign_check = await db.execute(select(Campaign.id).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
+    if not campaign_check.scalar_one_or_none():
+        raise HTTPException(404, "Campaign not found")
     result = await db.execute(
         select(CampaignLead).where(
             CampaignLead.campaign_id == campaign_id,
@@ -1373,6 +1397,7 @@ async def write_custom_email(
     payload: CustomEmailWrite,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Write (or update) a custom email for a lead on a personalized sequence step.
 
@@ -1381,7 +1406,7 @@ async def write_custom_email(
     ``active`` and queue slots are created.
     """
     # Fetch campaign to check custom_sequence_mode
-    camp_result = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
+    camp_result = await db.execute(select(Campaign).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
     campaign = camp_result.scalar_one_or_none()
     if not campaign:
         raise HTTPException(404, "Campaign not found")
@@ -1519,12 +1544,16 @@ async def preview_email(
     campaign_id: int,
     data: PreviewRequest,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Render a sequence email for preview (with optional lead variable substitution).
 
     Pass variant_id to preview a specific A/B variant's content instead of the
     default sequence content.
     """
+    campaign_check = await db.execute(select(Campaign.id).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
+    if not campaign_check.scalar_one_or_none():
+        raise HTTPException(404, "Campaign not found")
     seq_result = await db.execute(
         select(Sequence).where(
             Sequence.id == data.sequence_id,
@@ -1618,7 +1647,7 @@ async def send_test_email(
     data: TestEmailRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Send a rendered test email to the specified address using the campaign's first inbox."""
+    """Send a test email for a sequence (with optional lead variable substitution)."""
     import asyncio
 
     seq_result = await db.execute(
@@ -1714,8 +1743,11 @@ async def send_test_email(
 
 
 @router.get("/{campaign_id}/queue")
-async def list_queue(campaign_id: int, db: AsyncSession = Depends(get_db)):
+async def list_queue(campaign_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     """Queue slots for this campaign; includes inbox email per slot."""
+    campaign_check = await db.execute(select(Campaign.id).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
+    if not campaign_check.scalar_one_or_none():
+        raise HTTPException(404, "Campaign not found")
     # Also count raw slots for debugging
     raw_count = await db.execute(
         select(func.count(QueueSlot.id))
@@ -1758,13 +1790,16 @@ async def list_queue(campaign_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{campaign_id}/analytics/steps")
-async def step_analytics(campaign_id: int, db: AsyncSession = Depends(get_db)):
+async def step_analytics(campaign_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     """Per-step (and per-variant) analytics for a campaign.
 
     Returns one entry per sequence step, each containing total counts plus
     a breakdown by variant (including the 'default' i.e. no-variant bucket).
     'opportunities' = leads that were sent the step AND are marked interested.
     """
+    campaign_check = await db.execute(select(Campaign.id).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
+    if not campaign_check.scalar_one_or_none():
+        raise HTTPException(404, "Campaign not found")
     # Fetch all sequences with their variants
     seq_result = await db.execute(
         select(Sequence)
@@ -1862,8 +1897,11 @@ async def step_analytics(campaign_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{campaign_id}/sent")
-async def list_sent_emails(campaign_id: int, db: AsyncSession = Depends(get_db)):
+async def list_sent_emails(campaign_id: int, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     """Return sent email history for this campaign with full status details."""
+    campaign_check = await db.execute(select(Campaign.id).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
+    if not campaign_check.scalar_one_or_none():
+        raise HTTPException(404, "Campaign not found")
     from sqlalchemy.orm import selectinload as _sl
     result = await db.execute(
         select(EmailLog, Lead, CampaignLead, Inbox)
@@ -1920,8 +1958,12 @@ async def remove_lead_from_campaign(
     lead_id: int,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Remove a lead from a campaign. Deletes enrollment and pending queue slots."""
+    campaign_check = await db.execute(select(Campaign.id).where(Campaign.id == campaign_id, Campaign.org_id == org_id))
+    if not campaign_check.scalar_one_or_none():
+        raise HTTPException(404, "Campaign not found")
     result = await db.execute(
         select(CampaignLead).where(
             CampaignLead.campaign_id == campaign_id,

@@ -204,15 +204,9 @@ async def _resolve_user_and_login(
             user.oauth_sub = sub
 
     if user is None:
-        # 3. Check if any users exist (first-user = admin setup)
-        count_result = await db.execute(select(func.count(User.id)))
-        user_count = count_result.scalar_one()
-        if user_count > 0:
-            raise HTTPException(
-                403,
-                "No account found for this email. Contact your admin to create your account.",
-            )
-        # First user — create admin
+        # Every new email creates its own account + Organization (self-serve SaaS signup).
+        # The very first account created still gets role="admin" below via the
+        # setup-status flow; subsequent accounts are org owners of their own tenant.
         username = email.split("@")[0].lower().replace(".", "_").replace("-", "_")
         # Ensure unique username
         exist = await db.execute(select(User).where(User.username == username))

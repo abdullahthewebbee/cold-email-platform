@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
+from app.auth import get_current_user, get_current_org_id
 from app.settings_manager import settings
 from app.database import get_db
 from app.models import Inbox, GmailAccount, OAuthState, PendingOAuthConnect
@@ -222,6 +222,7 @@ async def google_authorize(
     ramp_up_step_size: int = 1,
     db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Redirect user to Google consent screen."""
     from app.app_settings import get_google_oauth_credentials
@@ -235,7 +236,7 @@ async def google_authorize(
     csrf_state = OAuthState(
         state_token=csrf_token,
         purpose="inbox_google",
-        metadata_json=json.dumps({"display_name": display_name, "max_per_day": max_per_day, "ramp_up_enabled": ramp_up_enabled, "ramp_up_start": ramp_up_start, "ramp_up_step_size": ramp_up_step_size}),
+        metadata_json=json.dumps({"display_name": display_name, "max_per_day": max_per_day, "ramp_up_enabled": ramp_up_enabled, "ramp_up_start": ramp_up_start, "ramp_up_step_size": ramp_up_step_size, "org_id": org_id}),
         expires_at=utcnow() + timedelta(minutes=10),
     )
     db.add(csrf_state)
@@ -248,6 +249,7 @@ async def google_authorize(
         "ramp_up_enabled": ramp_up_enabled,
         "ramp_up_start": ramp_up_start,
         "ramp_up_step_size": ramp_up_step_size,
+        "org_id": org_id,
         "_csrf": csrf_token,
     })
 
@@ -286,6 +288,7 @@ async def google_callback(
         state_data = {}
     display_name = state_data.get("display_name", "")
     max_per_day = state_data.get("max_per_day", 50)
+    org_id = state_data.get("org_id")
     wait_minutes_between = state_data.get("wait_minutes_between", 5)
     max_jitter_seconds = state_data.get("max_jitter_seconds", 180)
     tracking_domain = state_data.get("tracking_domain", "") or None
@@ -377,6 +380,7 @@ async def google_callback(
     else:
         # Create new inbox + gmail account
         inbox = Inbox(
+            org_id=org_id,
             email=email,
             display_name=display_name or email.split("@")[0],
             max_emails_per_day=max_per_day,

@@ -19,7 +19,8 @@ import { useUniboxNotifications } from '../../context/UniboxNotificationsContext
 import { useNotifications } from '../../context/NotificationsContext';
 import { useOnboarding } from '../../context/OnboardingContext';
 import { useSystemHealth } from '../../context/SystemHealthContext';
-
+import { useAuth } from '../../context/AuthContext';
+import { RiLogoutBoxLine } from 'react-icons/ri';
 // links including icons
 const links = [
   { to: '/analytics', label: 'Analytics', icon: <RiLineChartLine size={20} /> },
@@ -103,13 +104,14 @@ export default function Sidebar({ collapsed, onToggle }) {
   const { count: notifUnreadCount } = useNotifications();
   const { startOnboarding } = useOnboarding();
   const { overallStatus } = useSystemHealth();
+  const { logout } = useAuth();
   const [helpOpen, setHelpOpen] = useState(false);
   const helpRef = useRef(null);
 
   const healthDotColor = {
-    error:   'bg-red-500',
+    error: 'bg-red-500',
     warning: 'bg-yellow-400',
-    ok:      'bg-green-500',
+    ok: 'bg-green-500',
     unknown: 'bg-gray-400',
   }[overallStatus] || 'bg-gray-400';
 
@@ -127,15 +129,13 @@ export default function Sidebar({ collapsed, onToggle }) {
 
   return (
     <nav
-      className={`fixed top-0 left-0 z-40 h-full bg-gray-800 text-gray-300 flex flex-col p-3 transition-width duration-200 ${
-        widthClass
-      }`}
+      className={`fixed top-0 left-0 z-40 h-full bg-gray-800 text-gray-300 flex flex-col p-3 transition-width duration-200 ${widthClass
+        }`}
     >
       <NavLink
         to="/"
-        className={`mb-8 flex items-center gap-2 no-underline hover:no-underline ${
-          justifyLogo
-        }`}
+        className={`mb-8 flex items-center gap-2 no-underline hover:no-underline ${justifyLogo
+          }`}
         title="Home"
       >
         <img src={logo} alt="Emissary logo" className="h-8 w-8" />
@@ -154,11 +154,10 @@ export default function Sidebar({ collapsed, onToggle }) {
                   isActive ||
                   (l.to === '/analytics' && location.pathname === '/') ||
                   (l.to.startsWith('/settings') && location.pathname === '/settings');
-                return `flex items-center py-2 rounded px-2 transition-colors transition-transform transform-gpu active:scale-95 hover:scale-102 duration-150 whitespace-nowrap !no-underline !hover:no-underline ${
-                  active
+                return `flex items-center py-2 rounded px-2 transition-colors transition-transform transform-gpu active:scale-95 hover:scale-102 duration-150 whitespace-nowrap !no-underline !hover:no-underline ${active
                     ? 'text-primary font-semibold bg-gray-700'
                     : 'hover:bg-gray-700/50'
-                }`;
+                  }`;
               }}
             >
               <span className="flex-shrink-0 relative inline-flex">
@@ -193,8 +192,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <NavLink
             to="/system-health"
             className={({ isActive }) =>
-              `flex items-center py-2 rounded px-2 transition-colors transition-transform transform-gpu active:scale-95 hover:scale-102 duration-150 whitespace-nowrap !no-underline !hover:no-underline ${
-                isActive ? 'text-primary font-semibold bg-gray-700' : 'hover:bg-gray-700/50'
+              `flex items-center py-2 rounded px-2 transition-colors transition-transform transform-gpu active:scale-95 hover:scale-102 duration-150 whitespace-nowrap !no-underline !hover:no-underline ${isActive ? 'text-primary font-semibold bg-gray-700' : 'hover:bg-gray-700/50'
               }`
             }
           >
@@ -212,14 +210,23 @@ export default function Sidebar({ collapsed, onToggle }) {
             </span>
           )}
         </div>
+        {/* Logout */}
+        <button
+          onClick={logout}
+          className="w-full flex items-center py-2 rounded px-2 transition-colors transition-transform transform-gpu active:scale-95 hover:scale-102 duration-150 whitespace-nowrap hover:bg-gray-700/50 text-gray-300"
+        >
+          <span className="flex-shrink-0"><RiLogoutBoxLine size={20} /></span>
+          {!collapsed && <span className="ml-2">Logout</span>}
+        </button>
 
+        {/* Help — styled like nav links, popover opens to the right */}
+        <div className="relative group" ref={helpRef}></div>
         {/* Help — styled like nav links, popover opens to the right */}
         <div className="relative group" ref={helpRef}>
           <button
             onClick={() => { setHelpOpen(prev => !prev); }}
-            className={`w-full flex items-center py-2 rounded px-2 transition-colors transition-transform transform-gpu active:scale-95 hover:scale-102 duration-150 whitespace-nowrap ${
-              helpOpen ? 'text-primary font-semibold bg-gray-700' : 'hover:bg-gray-700/50 text-gray-300'
-            }`}
+            className={`w-full flex items-center py-2 rounded px-2 transition-colors transition-transform transform-gpu active:scale-95 hover:scale-102 duration-150 whitespace-nowrap ${helpOpen ? 'text-primary font-semibold bg-gray-700' : 'hover:bg-gray-700/50 text-gray-300'
+              }`}
           >
             <span className="flex-shrink-0"><RiInformationLine size={20} /></span>
             {!collapsed && <span className="ml-2">Help</span>}
@@ -282,19 +289,18 @@ export default function Sidebar({ collapsed, onToggle }) {
 
         {/* Collapse toggle */}
         <div className="flex justify-end mr-1">
-        <button
-          onClick={onToggle}
-          onMouseDown={e => e.preventDefault()}
-          className="text-gray-400 hover:text-primary focus:outline-none focus-visible:outline-none focus:ring-0 bg-transparent focus:bg-transparent active:bg-transparent transition-transform duration-200 active:scale-90"
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <RiSidebarFoldLine
-            size={24}
-            className={`transition-transform duration-300 ${
-              collapsed ? 'rotate-180' : 'rotate-0'
-            }`}
-          />
-        </button>
+          <button
+            onClick={onToggle}
+            onMouseDown={e => e.preventDefault()}
+            className="text-gray-400 hover:text-primary focus:outline-none focus-visible:outline-none focus:ring-0 bg-transparent focus:bg-transparent active:bg-transparent transition-transform duration-200 active:scale-90"
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <RiSidebarFoldLine
+              size={24}
+              className={`transition-transform duration-300 ${collapsed ? 'rotate-180' : 'rotate-0'
+                }`}
+            />
+          </button>
         </div>
       </div>
     </nav>

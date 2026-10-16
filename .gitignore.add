@@ -1,0 +1,19 @@
+# --- InboxAir: never commit secrets or local data (append to your .gitignore) ---
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+dump.rdb
+*.sqlite
+*.db
+# Claude Code: personal settings stay local, shared ones are committed
+.claude/settings.local.json
+# build output
+frontend/dist/
+node_modules/
+__pycache__/

@@ -32,9 +32,9 @@ def test_mcp_setup_returns_fragment():
         assert data["mcp_http_url"].endswith("/api/mcp")
         frag = data["cursor_mcp_fragment"]
         assert "mcpServers" in frag
-        assert "quickly-leads" in frag["mcpServers"]
-        inner = frag["mcpServers"]["quickly-leads"]
+        assert "devoutreach-leads" in frag["mcpServers"]
+        inner = frag["mcpServers"]["devoutreach-leads"]
         assert "command" in inner and "args" in inner and "env" in inner
-        assert inner["env"]["QUICKLY_MCP_API_KEY"] == "__PASTE_API_KEY_FROM_SETTINGS__"
+        assert inner["env"]["DEVOUTREACH_MCP_API_KEY"] == "__PASTE_API_KEY_FROM_SETTINGS__"
     finally:
         app.dependency_overrides.pop(_real_auth, None)

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+﻿import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { api, apiCache, postJsonForDownload } from '../api';
 import { useDarkMode } from '../context/DarkModeContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -9,6 +9,10 @@ import { Button } from '../components/ui/Button';
 import { FileUploadArea } from '../components/ui/FileUploadArea';
 import { Card } from '../components/ui/Card';
 import EmailVerificationSettings from '../components/EmailVerificationSettings';
+import BillingTab from '../components/BillingTab';
+import InviteTeamMember from '../components/InviteTeamMember';
+import TeamMembersList from '../components/TeamMembersList';
+import Icon from '../components/ui/AegisIcon';
 
 const SETTINGS_TABS = [
   { id: 'general', label: 'General' },
@@ -16,14 +20,16 @@ const SETTINGS_TABS = [
   { id: 'features', label: 'Features' },
   { id: 'integrating', label: 'Integrating' },
   { id: 'dev', label: 'Dev' },
+  { id: 'billing', label: 'Billing' },
 ];
 
-/** In-tab section anchors (DOM id = `settings-${id}`). */
 const SECTIONS_BY_TAB = {
   general: [
+    { id: 'invite', label: 'Invite Team' },
     { id: 'scheduling', label: 'Scheduling' },
-    { id: 'appearance', label: 'Appearance' },
+    { id: 'email-verification', label: 'Email Verification' },
     { id: 'account', label: 'Account & Security' },
+    { id: 'danger-zone', label: 'Danger Zone' },
     { id: 'known-ips', label: 'Known IPs' },
   ],
   setup: [
@@ -31,7 +37,7 @@ const SECTIONS_BY_TAB = {
     { id: 'backup-restore', label: 'Backup & restore' },
   ],
   features: [
-    { id: 'ai', label: 'AI features' },
+    { id: 'campaign-modes', label: 'Campaign Modes' },
     { id: 'other', label: 'Other' },
   ],
   integrating: [
@@ -40,82 +46,635 @@ const SECTIONS_BY_TAB = {
     { id: 'mcp', label: 'MCP' },
   ],
   dev: [{ id: 'test-mode', label: 'Test mode' }],
+  billing: [{ id: 'billing-plan', label: 'Plan & Subscription' }],
 };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ── scoped styles ─────────────────────────────────────────────────────────── */
+const CSS = `
+.st-hero {
+  background: var(--gold-dim);
+  padding: 2rem 2rem 0;
+  position: relative;
+}
+.st-hero-eyebrow {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 0.4rem;
+}
+.st-hero-title {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.25rem;
+}
+.st-tab-nav {
+  display: flex;
+  gap: 0;
+  margin-top: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.st-tab-btn {
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.55rem 1.1rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  margin-bottom: -1px;
+}
+.st-tab-btn:hover { color: var(--text); }
+.st-tab-btn.active {
+  color: var(--gold);
+  border-bottom-color: var(--do-gold);
+}
+.st-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.st-sidebar {
+  width: 160px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--do-border);
+  padding: 1rem 0;
+  overflow-y: auto;
+}
+.st-sidebar-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 0.78rem;
+  padding: 0.45rem 1rem;
+  color: var(--do-text-muted);
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.st-sidebar-item:hover { color: var(--do-text); background: var(--do-hover); }
+.st-sidebar-item.active {
+  background: var(--do-gold-bg);
+  color: var(--do-gold-dark);
+  border-left-color: var(--do-gold);
+  font-weight: 600;
+}
+.st-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.75rem 2rem;
+  min-height: 0;
+}
+.st-section { margin-bottom: 2.5rem; }
+.st-section-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--do-text);
+  margin: 0 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--do-border);
+}
+.st-field-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--do-text-muted);
+  margin-bottom: 0.35rem;
+}
+.st-input {
+  width: 100%;
+  max-width: 24rem;
+  border: 1px solid var(--do-border);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  background: var(--do-surface);
+  color: var(--do-text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.st-input:focus {
+  outline: none;
+  border-color: var(--do-gold);
+  box-shadow: 0 0 0 2px rgba(201,168,76,0.18);
+}
+.st-input-mono {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.82rem;
+}
+.st-danger-box {
+  border: 1px solid var(--danger-line);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: var(--danger-dim);
+}
+.dark .st-danger-box { background: rgba(220,38,38,0.07); border-color: rgba(220,38,38,0.35); }
+.st-toggle {
+  position: relative;
+  width: 2.75rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.st-toggle.on { background: var(--do-gold-dark); }
+.st-toggle.off { background: var(--do-border); }
+.st-toggle-knob {
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+}
+.st-toggle.on .st-toggle-knob { transform: translateX(1.25rem); }
+.st-mode-card {
+  border: 2px solid var(--do-border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+  background: var(--do-surface);
+}
+.st-mode-card.manual { border-color: var(--text-dim); }
+.st-mode-card.semi_manual { border-color: var(--do-gold); }
+.st-mode-card.full_ai { border-color: var(--info); }
+.st-mode-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.st-mode-body {
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--do-border);
+}
+.st-pill {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.68rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.st-pill-gold { background: var(--do-gold-bg); color: var(--do-gold-dark); }
+.st-pill-active { background: var(--do-gold-dark); color: var(--on-gold); }
+.st-pill-purple { background: var(--info-dim); color: var(--info); }
+.st-code-input {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  width: 7rem;
+  border: 2px solid;
+  background: var(--do-surface);
+  color: var(--do-text);
+}
+.st-code-input:focus { outline: none; }
+.st-code-input.manual { border-color: var(--text-dim); }
+.st-code-input.semi_manual { border-color: var(--do-gold); }
+.st-code-input.full_ai { border-color: var(--info); }
+.st-apikey-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--do-border);
+}
+.st-wh-row {
+  border: 1px solid var(--do-border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.6rem;
+  background: var(--do-surface);
+}
+.st-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.st-dialog {
+  background: var(--do-surface);
+  border-radius: 0.75rem;
+  max-width: 38rem;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+.st-mcp-block {
+  background: var(--do-cream);
+  border: 1px solid var(--do-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--do-text);
+}
+`;
+
+/* ── sub-components ────────────────────────────────────────────────────────── */
+
+function ProfileEditSection({ user }) {
+  const notify = useNotify();
+  const [username, setUsername] = useState(user?.username || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!username.trim() || username === user?.username) return;
+    setSaving(true);
+    try {
+      await api.patch('/auth/me', { username: username.trim() });
+      notify({ type: 'success', message: 'Username updated' });
+    } catch (err) {
+      notify({ type: 'error', message: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save} className="do-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--do-text)' }}>Profile</p>
+      <div>
+        <label className="st-field-label">Username</label>
+        <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="st-input" />
+      </div>
+      <div>
+        <button
+          type="submit"
+          className="do-btn-outline"
+          disabled={saving || !username.trim() || username === user?.username}
+          style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}
+        >
+          {saving ? 'Saving…' : 'Save username'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ChangePasswordSection({ user }) {
+  const notify = useNotify();
+  const hasPassword = !!user?.has_password;
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.put('/auth/change-password', { current_password: currentPassword, new_password: newPassword });
+      notify({ type: 'success', message: hasPassword ? 'Password changed' : 'Password set — you can now sign in with a username & password too' });
+      setCurrentPassword('');
+      setNewPassword('');
+    } catch (err) {
+      notify({ type: 'error', message: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save} className="do-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--do-text)' }}>{hasPassword ? 'Change Password' : 'Set a Password'}</p>
+      {!hasPassword && (
+        <p style={{ fontSize: '0.78rem', color: 'var(--do-text-muted)' }}>Your account was created with Google/Microsoft sign-in and has no password yet. Set one here to also be able to sign in with a username &amp; password.</p>
+      )}
+      {hasPassword && (
+        <div>
+          <label className="st-field-label">Current password</label>
+          <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="st-input" />
+        </div>
+      )}
+      <div>
+        <label className="st-field-label">New password</label>
+        <input type="password" minLength={8} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="st-input" />
+      </div>
+      <div>
+        <button
+          type="submit"
+          className="do-btn-outline"
+          disabled={saving || (hasPassword && !currentPassword) || newPassword.length < 8}
+          style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}
+        >
+          {saving ? 'Saving…' : (hasPassword ? 'Change password' : 'Set password')}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function DeleteAccountSection() {
+  const notify = useNotify();
+  const [confirmText, setConfirmText] = useState('');
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const handleDelete = async () => {
+    if (confirmText !== 'DELETE') return;
+    setBusy(true);
+    try {
+      await api.del(`/auth/me?confirm=DELETE`);
+      notify({ type: 'success', message: 'Account deleted' });
+      window.location.href = '/login';
+    } catch (err) {
+      notify({ type: 'error', message: err.message });
+      setBusy(false);
+    }
+  };
+
+  if (!showConfirm) {
+    return (
+      <div className="st-danger-box">
+        <p style={{ fontSize: '0.82rem', color: 'var(--do-text)', marginBottom: '0.75rem' }}>
+          Permanently delete your account and all associated data (campaigns, leads, inboxes, connected email accounts). If you're the only member of your organization, all organization data is deleted too. This cannot be undone.
+        </p>
+        <button
+          className="do-btn-outline"
+          onClick={() => setShowConfirm(true)}
+          style={{ fontSize: '0.8rem', padding: '0.4rem 1rem', borderColor: 'var(--danger)', color: 'var(--danger)' }}
+        >
+          Delete my account
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="st-danger-box" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--danger)' }}>
+        This is permanent. Type <code style={{ background: 'var(--danger-dim)', padding: '0 0.3rem', borderRadius: '0.25rem' }}>DELETE</code> to confirm.
+      </p>
+      <input
+        type="text"
+        value={confirmText}
+        onChange={e => setConfirmText(e.target.value)}
+        placeholder="Type DELETE"
+        className="st-input"
+        style={{ maxWidth: '16rem', borderColor: 'var(--danger-line)' }}
+      />
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button
+          className="do-btn-outline"
+          onClick={handleDelete}
+          disabled={confirmText !== 'DELETE' || busy}
+          style={{ fontSize: '0.8rem', padding: '0.4rem 1rem', borderColor: 'var(--danger)', color: 'var(--danger)' }}
+        >
+          {busy ? 'Deleting…' : 'Permanently delete my account'}
+        </button>
+        <button
+          className="do-btn-outline"
+          onClick={() => { setShowConfirm(false); setConfirmText(''); }}
+          style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CampaignModeCodes() {
+  const notify = useNotify();
+  const [codes, setCodes] = useState({ manual: '', semi_manual: '', full_ai: '' });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [expanded, setExpanded] = useState(null);
+  const [credits, setCredits] = useState(null);
+  const [modelSaving, setModelSaving] = useState(false);
+  const [activeMode, setActiveMode] = useState(null);
+  const [modeActivating, setModeActivating] = useState(false);
+
+  const MODEL_LABELS = {
+    deepseek: { name: 'DeepSeek V3 Flash', sub: 'Fast & optimized for cold email', cost: '1 cr/op' },
+  };
+
+  useEffect(() => {
+    api.get('/settings/campaign-mode-codes').then(d => setCodes(d)).catch(() => {});
+    api.get('/credits/balance').then(d => setCredits(d)).catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.post('/settings/campaign-mode-codes', codes);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch(e) {}
+    finally { setSaving(false); }
+  };
+
+  const activateMode = async (modeKey) => {
+    const newActive = activeMode === modeKey ? null : modeKey;
+    setModeActivating(true);
+    try {
+      if (newActive) {
+        if (activeMode && activeMode !== 'manual') {
+          await api.post('/settings/activate-mode', { mode: activeMode, active: false });
+        }
+        await api.post('/settings/activate-mode', { mode: newActive, active: newActive !== 'manual' });
+        setActiveMode(newActive);
+        notify(`${newActive.replace('_', ' ')} mode activated`, 'success');
+      } else {
+        await api.post('/settings/activate-mode', { mode: modeKey, active: false });
+        setActiveMode(null);
+        notify('Mode deactivated', 'success');
+      }
+    } catch { notify('Failed to activate mode', 'error'); }
+    finally { setModeActivating(false); }
+  };
+
+  const saveModel = async (mode, model) => {
+    setModelSaving(true);
+    try {
+      await api.post('/credits/model', { model, mode });
+      setCredits(prev => ({ ...prev, [`${mode}_model`]: model }));
+      notify('Model saved', 'success');
+    } catch { notify('Failed to save model', 'error'); }
+    finally { setModelSaving(false); }
+  };
+
+  const MODELS = ['gemini', 'deepseek', 'claude'];
+
+  const MODES = [
+    {
+      key: 'manual',
+      label: 'Manual',
+      desc: 'You build sequences and branch trees yourself. Full control over every step and follow-up.',
+      hasAI: false,
+      features: ['Branch-tree sequences','A/B variant testing','Full queue control','Open/click/reply tracking','Lead personalization fields'],
+    },
+    {
+      key: 'semi_manual',
+      label: 'Semi-Manual AI',
+      desc: 'Write Step 1 only. AI reads every reply and auto-drafts the next response for your review.',
+      hasAI: true,
+      modelKey: 'semi_manual_model',
+      features: ['Everything in Manual','AI reply interest classifier','AI reply draft assistant','Human review before sending'],
+    },
+    {
+      key: 'full_ai',
+      label: 'Full AI',
+      desc: 'No sequences, no branch tree. AI writes first-touch emails and handles all replies end-to-end.',
+      hasAI: true,
+      modelKey: 'full_ai_model',
+      features: ['Everything in Semi-Manual AI','AI first-touch email drafting','Deep personalization engine','AI sequence generator','Auto-send replies (optional)'],
+    },
+  ];
+
+  return (
+    <div>
+      <p style={{ fontSize: '0.78rem', color: 'var(--do-text-muted)', marginBottom: '1rem' }}>
+        Choose how your campaigns operate. Each mode uses different AI features. Set codes below — users paste these when creating a campaign.
+      </p>
+
+      {MODES.map(mode => (
+        <div key={mode.key} className={`st-mode-card ${mode.key}`}>
+          <button
+            className="st-mode-header"
+            onClick={() => setExpanded(expanded === mode.key ? null : mode.key)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--do-text)' }}>{mode.label}</span>
+              {activeMode === mode.key && <span className="st-pill st-pill-active">Active</span>}
+              {mode.hasAI && credits?.[mode.modelKey] && MODEL_LABELS[credits[mode.modelKey]]?.name && (
+                <span className="st-pill st-pill-gold">{MODEL_LABELS[credits[mode.modelKey]]?.name}</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }} onClick={e => e.stopPropagation()}>
+              <button
+                disabled={modeActivating}
+                onClick={() => activateMode(mode.key)}
+                className={`toggle${activeMode === mode.key ? ' on' : ''}`}
+                style={{ opacity: modeActivating ? 0.5 : 1 }}
+              >
+              </button>
+              <input
+                type="text"
+                value={codes[mode.key] || ''}
+                onChange={e => { e.stopPropagation(); setCodes(c => ({ ...c, [mode.key]: e.target.value.toUpperCase() })); }}
+                onClick={e => e.stopPropagation()}
+                className={`st-code-input ${mode.key}`}
+                placeholder="e.g. SEMI-2024"
+              />
+              <span style={{ color: 'var(--do-text-muted)', fontSize: '0.75rem' }}>
+                <Icon name={expanded === mode.key ? 'chevron-up' : 'chevron-down'} size={16} />
+              </span>
+            </div>
+          </button>
+
+          {expanded === mode.key && (
+            <div className="st-mode-body">
+              <p style={{ fontSize: '0.82rem', color: 'var(--do-text-muted)', marginBottom: '0.75rem' }}>{mode.desc}</p>
+              <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                {mode.features.map(f => (
+                  <li key={f} style={{ fontSize: '0.78rem', color: 'var(--do-text-muted)', display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--gold-dark)' }}><Icon name="check" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} /></span>{f}
+                  </li>
+                ))}
+              </ul>
+              {!mode.hasAI ? (
+                <div style={{ fontSize: '0.75rem', color: 'var(--do-text-muted)', fontStyle: 'italic' }}>No AI credits required for Manual mode.</div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', padding: '0.6rem 0.75rem', borderRadius: '0.5rem', border: '1px solid var(--do-gold-bg)', background: 'var(--do-gold-bg)' }}>
+                    <span><Icon name="cpu" size={16} /></span>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--do-text-muted)' }}>AI handles all email writing automatically. 1 credit per operation.</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--do-text-muted)' }}>Current balance</span>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--do-gold-dark)' }}>
+                      {credits?.is_unlimited ? 'Unlimited' : `${(credits?.credits_remaining || 0).toLocaleString()} credits`}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+
+      <div style={{ marginTop: '1rem' }}>
+        <button className="do-btn-gold" onClick={save} disabled={saving} style={{ fontSize: '0.82rem', padding: '0.45rem 1.25rem' }}>
+          {saved ? 'Saved' : saving ? 'Saving…' : 'Save codes'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── main component ────────────────────────────────────────────────────────── */
 
 export default function Settings() {
+  const { user } = useAuth();
   const notify = useNotify();
-  const { themePreference, setThemePreference } = useDarkMode();
   const confirm = useConfirm();
-  const { isProduction } = useAppMode();
-  const { user, logout } = useAuth();
+  const { darkMode } = useDarkMode();
+  const { appMode } = useAppMode();
 
   /* ── state ── */
-  const [strategy, setStrategy] = useState('priority');
+  const [strategy, setStrategy] = useState('time_based');
   const [testMode, setTestMode] = useState(false);
-
-  // Account & Security
-  // API Keys
   const [apiKeys, setApiKeys] = useState([]);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyExpiry, setNewKeyExpiry] = useState('');
-  const [createdKey, setCreatedKey] = useState(null); // shown once after creation
-
-  // MCP (Cursor / AI agents)
+  const [createdKey, setCreatedKey] = useState(null);
   const [mcpSetup, setMcpSetup] = useState(null);
-
-  // Notifications (config managed in the dedicated Notifications page)
-  const [notifConfig, setNotifConfig] = useState({ enabled: false, notification_email: '', events: [], rate_limit_per_hour: 10 });
-
-  // Webhooks (new CRUD system)
-  const [webhooks, setWebhooks] = useState(() => apiCache.get('/settings/webhooks') || []);
+  const [notifConfig, setNotifConfig] = useState(null);
+  const [webhooks, setWebhooks] = useState([]);
   const [eventTypes, setEventTypes] = useState([]);
-  const [newWh, setNewWh] = useState({ url: '', secret: '', description: '', events: [], active: true });
+  const [newWh, setNewWh] = useState({ url: '', description: '', events: [] });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
-
-  // AI settings — keyed by feature id
   const [aiFeatures, setAiFeatures] = useState({});
-  const [aiExpanded, setAiExpanded] = useState({});           // { featureId: bool } — collapsed by default
-  const savedAiFeaturesRef = useRef({});                      // snapshot of last-saved AI features
-  const [aiProviders, setAiProviders] = useState(() => apiCache.get('/settings/ai/providers')?.providers || []);
-  const [aiModels, setAiModels] = useState({});
-  const [aiProviderSearch, setAiProviderSearch] = useState({});
-  const [aiModelSearch, setAiModelSearch] = useState({});
-  const [aiVerifying, setAiVerifying] = useState({});
-  const [aiVerifyResult, setAiVerifyResult] = useState({});
-
-  // Webhook test-event state
-  const [testEventWh, setTestEventWh] = useState(null); // webhook id currently testing
+  const [aiCredits, setAiCredits] = useState(null);
+  const [creditsLoading, setCreditsLoading] = useState(false);
+  const [modelSaving, setModelSaving] = useState(false);
+  const [aiExpanded, setAiExpanded] = useState(false);
+  const [aiProviders, setAiProviders] = useState([]);
+  const [aiModels, setAiModels] = useState([]);
+  const [aiProviderSearch, setAiProviderSearch] = useState('');
+  const [aiModelSearch, setAiModelSearch] = useState('');
+  const [aiVerifying, setAiVerifying] = useState(false);
+  const [aiVerifyResult, setAiVerifyResult] = useState(null);
+  const [testEventWh, setTestEventWh] = useState('');
   const [testEventType, setTestEventType] = useState('');
   const [testEventResult, setTestEventResult] = useState(null);
-
-  // Gmail Sync
-  const [gmailSync, setGmailSync] = useState({ push_topic: '', webhook_token: '', sync_interval_minutes: 5 });
+  const [gmailSync, setGmailSync] = useState({ pubsub_topic: '', webhook_token: '', polling_interval_minutes: 5 });
   const [gmailSyncSaving, setGmailSyncSaving] = useState(false);
-  const savedGmailSyncRef = useRef(null);
-
-  // Backup & restore (admin — PostgreSQL)
-  const [backupCfg, setBackupCfg] = useState({
-    schedule_enabled: false,
-    cron_expression: '0 3 * * *',
-    save_local: false,
-    local_relative_path: 'backups',
-    send_webhook: false,
-    webhook_url: '',
-    webhook_auth_header: '',
-    encrypt_backups: false,
-    backup_encryption_password: '',
-    backup_encryption_hint: '',
-  });
-  const [backupMeta, setBackupMeta] = useState({
-    webhook_auth_configured: false,
-    webhook_auth_header_masked: '',
-    local_disk_available: false,
-    local_backup_resolved: null,
-    backup_encryption_configured: false,
-  });
+  const [backupCfg, setBackupCfg] = useState(null);
+  const [backupMeta, setBackupMeta] = useState(null);
   const [backupSaving, setBackupSaving] = useState(false);
   const [backupRunning, setBackupRunning] = useState(false);
   const [backupDownloadBusy, setBackupDownloadBusy] = useState(false);
@@ -127,2013 +686,905 @@ export default function Settings() {
   const [restorePreview, setRestorePreview] = useState(null);
   const [restorePreviewBusy, setRestorePreviewBusy] = useState(false);
   const [restoreExecuteBusy, setRestoreExecuteBusy] = useState(false);
-
-  const BACKUP_MIN_PASSWORD_LEN = 8;
-
-  useEffect(() => {
-    if (!restoreFile) {
-      return undefined;
-    }
-    let cancelled = false;
-    setRestoreMetaBusy(true);
-    setRestoreMeta(null);
-    setRestorePreview(null);
-    (async () => {
-      try {
-        const data = await api.uploadMultipart('/settings/backup/restore/metadata', restoreFile, {});
-        if (!cancelled) {
-          setRestoreMeta(data);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          notify({ type: 'error', message: e.message });
-        }
-      } finally {
-        if (!cancelled) {
-          setRestoreMetaBusy(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [restoreFile]);
-
-  const clearRestoreWizard = () => {
-    setRestoreFile(null);
-    setRestoreFileKey(k => k + 1);
-    setRestorePassword('');
-    setRestoreMeta(null);
-    setRestorePreview(null);
-  };
-
-  const saveBackupSettings = useCallback(async () => {
-    if (backupCfg.encrypt_backups) {
-      const pw = (backupCfg.backup_encryption_password || '').trim();
-      if (!backupMeta.backup_encryption_configured && pw.length < BACKUP_MIN_PASSWORD_LEN) {
-        notify({
-          type: 'error',
-          message: `Enter a backup password (at least ${BACKUP_MIN_PASSWORD_LEN} characters) or turn off encryption.`,
-        });
-        return;
-      }
-      if (pw.length > 0 && pw.length < BACKUP_MIN_PASSWORD_LEN) {
-        notify({
-          type: 'error',
-          message: `Backup password must be at least ${BACKUP_MIN_PASSWORD_LEN} characters.`,
-        });
-        return;
-      }
-    }
-    setBackupSaving(true);
-    try {
-      const encR = await api.put('/settings/backup/encryption', {
-        encrypt_backups: backupCfg.encrypt_backups,
-        backup_encryption_password: (backupCfg.backup_encryption_password || '').trim(),
-        backup_encryption_hint: (backupCfg.backup_encryption_hint || '').trim(),
-      });
-      setBackupMeta(prev => ({
-        ...prev,
-        backup_encryption_configured: !!encR.backup_encryption_configured,
-      }));
-      setBackupCfg(prev => ({
-        ...prev,
-        backup_encryption_password: '',
-        backup_encryption_hint: encR.backup_encryption_hint ?? prev.backup_encryption_hint,
-        encrypt_backups: !!encR.encrypt_backups,
-      }));
-      const r = await api.put('/settings/backup/config', {
-        schedule_enabled: backupCfg.schedule_enabled,
-        cron_expression: backupCfg.cron_expression,
-        save_local: backupCfg.save_local,
-        local_relative_path: backupCfg.local_relative_path,
-        send_webhook: backupCfg.send_webhook,
-        webhook_url: backupCfg.webhook_url,
-        webhook_auth_header: backupCfg.webhook_auth_header,
-      });
-      setBackupMeta({
-        webhook_auth_configured: !!r.webhook_auth_configured,
-        webhook_auth_header_masked: r.webhook_auth_header_masked || '',
-        local_disk_available: !!r.local_disk_available,
-        local_backup_resolved: r.local_backup_resolved || null,
-        backup_encryption_configured: !!r.backup_encryption_configured,
-      });
-      setBackupCfg(prev => ({
-        ...prev,
-        webhook_auth_header: '',
-        encrypt_backups: !!r.encrypt_backups,
-        backup_encryption_hint: r.backup_encryption_hint ?? prev.backup_encryption_hint,
-      }));
-      notify({ type: 'success', message: 'Backup settings saved' });
-    } catch (e) {
-      notify({ type: 'error', message: e.message });
-    } finally {
-      setBackupSaving(false);
-    }
-  }, [backupCfg, backupMeta, notify]);
-
-  // Known IPs
-  const [knownIps, setKnownIps] = useState(() => apiCache.get('/settings/known-ips')?.known_ips || []);
+  const [knownIps, setKnownIps] = useState([]);
   const [knownIpsOpen, setKnownIpsOpen] = useState(false);
   const [currentIp, setCurrentIp] = useState('');
   const [newIpAddress, setNewIpAddress] = useState('');
-
   const [activeTab, setActiveTab] = useState('general');
   const tabContentRef = useRef(null);
-  const [activeSectionDomId, setActiveSectionDomId] = useState('');
+  const [activeSectionDomId, setActiveSectionDomId] = useState('settings-invite');
 
-  /* ── load data ── */
+  /* ── load ── */
   const loadAll = useCallback(async () => {
     try {
-      const [stratData, tmData, whList, evtData, aiData, provData, ipData, keysData, notifData, gmailSyncData, mcpData] = await Promise.all([
+      const [strat, tm, whs, evts, ai, prov, ips, keys, notif, gs, mcp] = await Promise.allSettled([
         api.get('/settings/scheduling-strategy'),
         api.get('/settings/test-mode'),
-        api.get('/settings/webhooks'),
-        api.get('/settings/webhooks/events'),
+        api.get('/webhooks'),
+        api.get('/webhooks/event-types'),
         api.get('/settings/ai'),
         api.get('/settings/ai/providers'),
         api.get('/settings/known-ips'),
-        api.get('/auth/api-keys'),
-        api.get('/notifications/config').catch(() => null),
-        api.get('/settings/gmail-sync').catch(() => null),
-        api.get('/settings/mcp-setup').catch(() => null),
+        api.get('/api-keys'),
+        api.get('/settings/notifications'),
+        api.get('/settings/gmail-sync'),
+        api.get('/settings/mcp-setup'),
       ]);
-      setStrategy(stratData.scheduling_strategy || 'priority');
-      setTestMode(tmData.test_mode || false);
-      setWebhooks(whList || []);
-      setEventTypes(evtData.events || []);
-      // default new webhook events = all
-      setNewWh(prev => ({ ...prev, events: evtData.events || [] }));
-      // Build per-feature map, clearing any unsaved api_key
-      const featMap = {};
-      for (const f of (aiData.features || [])) {
-        featMap[f.id] = { ...f, api_key: '' };
+      if (strat.status === 'fulfilled') setStrategy(strat.value?.strategy || 'time_based');
+      if (tm.status === 'fulfilled') setTestMode(tm.value?.enabled ?? false);
+      if (whs.status === 'fulfilled') setWebhooks(whs.value || []);
+      if (evts.status === 'fulfilled') setEventTypes(evts.value || []);
+      if (ai.status === 'fulfilled') setAiFeatures(ai.value || {});
+      if (prov.status === 'fulfilled') { setAiProviders(prov.value?.providers || []); setAiModels(prov.value?.models || []); }
+      if (ips.status === 'fulfilled') { setKnownIps(ips.value?.ips || []); setCurrentIp(ips.value?.current_ip || ''); }
+      if (keys.status === 'fulfilled') setApiKeys(keys.value || []);
+      if (notif.status === 'fulfilled') setNotifConfig(notif.value);
+      if (gs.status === 'fulfilled') setGmailSync(gs.value || {});
+      if (mcp.status === 'fulfilled') setMcpSetup(mcp.value);
+
+      if (user?.is_admin) {
+        const bc = await api.get('/admin/backup/config').catch(() => null);
+        if (bc) setBackupCfg(bc);
+        const bm = await api.get('/admin/backup/meta').catch(() => null);
+        if (bm) setBackupMeta(bm);
       }
-      setAiFeatures(featMap);
-      savedAiFeaturesRef.current = featMap;
-      setAiProviders(provData.providers || []);
-      setKnownIps(ipData.known_ips || []);
-      setCurrentIp(ipData.current_ip || '');
-      setApiKeys(keysData || []);
-      if (notifData) {
-        setNotifConfig(notifData);
-      }
-      if (gmailSyncData) {
-        const snap = {
-          push_topic: gmailSyncData.push_topic || '',
-          webhook_token: gmailSyncData.webhook_token || '',
-          sync_interval_minutes: gmailSyncData.sync_interval_minutes ?? 5,
-        };
-        setGmailSync(snap);
-        savedGmailSyncRef.current = snap;
-      }
-      if (user?.role === 'admin') {
-        try {
-          const b = await api.get('/settings/backup/config');
-          const diskOn = !!b.local_disk_available;
-          setBackupCfg({
-            schedule_enabled: !!b.schedule_enabled,
-            cron_expression: b.cron_expression || '0 3 * * *',
-            save_local: diskOn && !!b.save_local,
-            local_relative_path: b.local_relative_path || 'backups',
-            send_webhook: !!b.send_webhook,
-            webhook_url: b.webhook_url || '',
-            webhook_auth_header: '',
-            encrypt_backups: !!b.encrypt_backups,
-            backup_encryption_password: '',
-            backup_encryption_hint: b.backup_encryption_hint || '',
-          });
-          setBackupMeta({
-            webhook_auth_configured: !!b.webhook_auth_configured,
-            webhook_auth_header_masked: b.webhook_auth_header_masked || '',
-            local_disk_available: diskOn,
-            local_backup_resolved: b.local_backup_resolved || null,
-            backup_encryption_configured: !!b.backup_encryption_configured,
-          });
-        } catch {
-          /* non-admin or unavailable */
-        }
-      }
-      setMcpSetup(mcpData || null);
     } catch {}
-  }, [user]);
+  }, [user?.is_admin]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const visibleTabs = useMemo(
-    () => (isProduction ? SETTINGS_TABS.filter(t => t.id !== 'dev') : SETTINGS_TABS),
-    [isProduction],
-  );
-
-  const sectionNav = SECTIONS_BY_TAB[activeTab] || [];
-
-  useEffect(() => {
-    const syncFromHash = () => {
-      let raw = (window.location.hash || '').replace(/^#/, '');
-      if (!raw) raw = 'general';
-      const id = visibleTabs.some(t => t.id === raw) ? raw : 'general';
-      setActiveTab(id);
-      if (window.location.hash !== `#${id}`) {
-        window.history.replaceState(null, '', `#${id}`);
-      }
-    };
-    syncFromHash();
-    window.addEventListener('hashchange', syncFromHash);
-    return () => window.removeEventListener('hashchange', syncFromHash);
-  }, [visibleTabs]);
+  /* ── scroll-spy ── */
+  const scrollToSection = useCallback((domId) => {
+    const el = tabContentRef.current?.querySelector(`#${domId}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   useEffect(() => {
-    tabContentRef.current?.scrollTo(0, 0);
-  }, [activeTab]);
-
-  useEffect(() => {
-    const ids = (SECTIONS_BY_TAB[activeTab] || []).map(s => `settings-${s.id}`);
-    const root = tabContentRef.current;
-    setActiveSectionDomId(ids[0] || '');
-    if (!root || ids.length === 0) return;
-
-    let raf = 0;
-    const updateActiveFromScroll = () => {
-      const rootRect = root.getBoundingClientRect();
-      const margin = 20;
-      let current = ids[0];
-      for (const domId of ids) {
-        const el = document.getElementById(domId);
-        if (!el) continue;
-        const top = el.getBoundingClientRect().top - rootRect.top;
-        if (top <= margin) current = domId;
-      }
-      setActiveSectionDomId(prev => (prev === current ? prev : current));
-    };
-
-    const schedule = () => {
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        updateActiveFromScroll();
-      });
-    };
-
-    root.addEventListener('scroll', schedule, { passive: true });
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : null;
-    ro?.observe(root);
-    schedule();
-
-    return () => {
-      root.removeEventListener('scroll', schedule);
-      ro?.disconnect();
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [activeTab]);
-
-  const selectTab = id => {
-    if (!visibleTabs.some(t => t.id === id)) return;
-    setActiveTab(id);
-    window.history.replaceState(null, '', `#${id}`);
-  };
-
-  const scrollToSection = useCallback(sid => {
-    const domId = `settings-${sid}`;
-    setActiveSectionDomId(domId);
-    const el = document.getElementById(domId);
+    const el = tabContentRef.current;
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
-
-  /* ── scheduling strategy ── */
-  const submitStrategy = async val => {
-    if (val !== strategy) {
-      try {
-        const { has_leads } = await api.get('/campaigns/has-leads');
-        if (has_leads) {
-          const ok = await confirm(
-            'Changing the scheduling strategy will recalculate all campaigns. Continue?',
-          );
-          if (!ok) return;
+    const onScroll = () => {
+      const sections = SECTIONS_BY_TAB[activeTab] || [];
+      for (let i = sections.length - 1; i >= 0; i--) {
+        const s = el.querySelector(`#settings-${sections[i].id}`);
+        if (s && s.getBoundingClientRect().top - el.getBoundingClientRect().top <= 48) {
+          setActiveSectionDomId(`settings-${sections[i].id}`);
+          return;
         }
-      } catch {}
-    }
+      }
+      if (sections[0]) setActiveSectionDomId(`settings-${sections[0].id}`);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [activeTab]);
+
+  /* ── helpers ── */
+  const saveStrategy = async (val) => {
+    setStrategy(val);
+    try { await api.post('/settings/scheduling-strategy', { strategy: val }); }
+    catch (err) { notify({ type: 'error', message: err.message }); }
+  };
+
+  const saveGmailSync = async (e) => {
+    e.preventDefault();
+    setGmailSyncSaving(true);
     try {
-      await api.post('/settings/scheduling-strategy', { scheduling_strategy: val });
-      setStrategy(val);
-      notify({ type: 'success', message: 'Strategy saved' });
-    } catch (e) { notify({ type: 'error', message: e.message }); }
+      await api.post('/settings/gmail-sync', gmailSync);
+      notify({ type: 'success', message: 'Gmail sync settings saved' });
+    } catch (err) { notify({ type: 'error', message: err.message }); }
+    finally { setGmailSyncSaving(false); }
   };
 
-  /* ── test mode ── */
-  const submitTestMode = async val => {
+  const saveBackupCfg = async (e) => {
+    e.preventDefault();
+    setBackupSaving(true);
     try {
-      await api.post('/settings/test-mode', { test_mode: val });
-      setTestMode(val);
-      notify({ type: 'success', message: 'Test mode saved' });
-    } catch (e) { notify({ type: 'error', message: e.message }); }
+      await api.post('/admin/backup/config', backupCfg);
+      notify({ type: 'success', message: 'Backup configuration saved' });
+    } catch (err) { notify({ type: 'error', message: err.message }); }
+    finally { setBackupSaving(false); }
   };
 
-  /* ── webhook CRUD helpers ── */
-  const createWebhook = async () => {
-    if (!newWh.url.trim()) return notify({ type: 'error', message: 'URL is required' });
+  const runBackup = async () => {
+    setBackupRunning(true);
     try {
-      const wh = await api.post('/settings/webhooks', newWh);
-      setWebhooks(prev => [wh, ...prev]);
-      setNewWh({ url: '', secret: '', description: '', events: eventTypes, active: true });
-      notify({ type: 'success', message: 'Webhook created' });
-    } catch (e) { notify({ type: 'error', message: e.message }); }
+      await api.post('/admin/backup/run', {});
+      notify({ type: 'success', message: 'Backup started' });
+      setTimeout(async () => {
+        const bm = await api.get('/admin/backup/meta').catch(() => null);
+        if (bm) setBackupMeta(bm);
+      }, 3000);
+    } catch (err) { notify({ type: 'error', message: err.message }); }
+    finally { setBackupRunning(false); }
   };
 
-  const startEdit = wh => {
-    setEditingId(wh.id);
-    setEditForm({ url: wh.url, secret: wh.secret, description: wh.description, events: wh.events, active: wh.active });
+  const downloadBackup = async () => {
+    setBackupDownloadBusy(true);
+    try { await postJsonForDownload('/admin/backup/download', {}); }
+    catch (err) { notify({ type: 'error', message: err.message }); }
+    finally { setBackupDownloadBusy(false); }
   };
-  const cancelEdit = () => { setEditingId(null); setEditForm({}); };
 
-  const saveEdit = async id => {
+  const loadRestoreMeta = async () => {
+    if (!restoreFile) return;
+    setRestoreMetaBusy(true);
     try {
-      const updated = await api.patch(`/settings/webhooks/${id}`, editForm);
-      setWebhooks(prev => prev.map(w => (w.id === id ? updated : w)));
-      setEditingId(null);
-      notify({ type: 'success', message: 'Webhook updated' });
-    } catch (e) { notify({ type: 'error', message: e.message }); }
+      const fd = new FormData();
+      fd.append('file', restoreFile);
+      if (restorePassword) fd.append('password', restorePassword);
+      const m = await api.postForm('/admin/backup/restore/meta', fd);
+      setRestoreMeta(m);
+    } catch (err) { notify({ type: 'error', message: err.message }); }
+    finally { setRestoreMetaBusy(false); }
   };
 
-  const deleteWebhook = async id => {
-    const ok = await confirm('Delete this webhook?');
+  const loadRestorePreview = async () => {
+    if (!restoreFile) return;
+    setRestorePreviewBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', restoreFile);
+      if (restorePassword) fd.append('password', restorePassword);
+      const p = await api.postForm('/admin/backup/restore/preview', fd);
+      setRestorePreview(p);
+    } catch (err) { notify({ type: 'error', message: err.message }); }
+    finally { setRestorePreviewBusy(false); }
+  };
+
+  const executeRestore = async () => {
+    if (!restoreFile) return;
+    const ok = await confirm('This will overwrite current data with the backup. Continue?');
     if (!ok) return;
+    setRestoreExecuteBusy(true);
     try {
-      await api.del(`/settings/webhooks/${id}`);
-      setWebhooks(prev => prev.filter(w => w.id !== id));
-      notify({ type: 'success', message: 'Webhook deleted' });
-    } catch (e) { notify({ type: 'error', message: e.message }); }
+      const fd = new FormData();
+      fd.append('file', restoreFile);
+      if (restorePassword) fd.append('password', restorePassword);
+      await api.postForm('/admin/backup/restore/execute', fd);
+      notify({ type: 'success', message: 'Restore completed' });
+    } catch (err) { notify({ type: 'error', message: err.message }); }
+    finally { setRestoreExecuteBusy(false); }
   };
 
-  const testWebhook = async id => {
+  const createApiKey = async (e) => {
+    e.preventDefault();
+    if (!newKeyName.trim()) return;
     try {
-      await api.post(`/settings/webhooks/${id}/test`);
-      notify({ type: 'success', message: 'Test event sent' });
-    } catch (e) { notify({ type: 'error', message: e.message }); }
-  };
-
-  const testWebhookEvent = async (id, event) => {
-    if (!event) return notify({ type: 'error', message: 'Select an event type' });
-    try {
-      const res = await api.post(`/settings/webhooks/${id}/test-event`, { event });
-      setTestEventResult(res.payload_preview);
-      notify({ type: 'success', message: `Simulated ${event} event sent` });
-    } catch (e) { notify({ type: 'error', message: e.message }); }
-  };
-
-  const toggleActive = async (id, current) => {
-    try {
-      const updated = await api.patch(`/settings/webhooks/${id}`, { active: !current });
-      setWebhooks(prev => prev.map(w => (w.id === id ? updated : w)));
-    } catch (e) { notify({ type: 'error', message: e.message }); }
-  };
-
-  /* ── API Keys ── */
-  const createApiKey = async () => {
-    try {
-      const res = await api.post('/auth/api-keys', {
-        name: newKeyName,
-        ...(newKeyExpiry ? { expires_in_days: parseInt(newKeyExpiry, 10) } : {}),
-      });
-      setCreatedKey(res.key);
-      setNewKeyName(''); setNewKeyExpiry('');
-      const keysData = await api.get('/auth/api-keys');
-      setApiKeys(keysData || []);
-    } catch (e) { notify({ type: 'error', message: e.message }); }
-  };
-
-  const revokeApiKey = async id => {
-    const yes = await confirm('Revoke this API key? This cannot be undone.');
-    if (!yes) return;
-    try {
-      await api.del(`/auth/api-keys/${id}`);
-      setApiKeys(prev => prev.filter(k => k.id !== id));
-      notify({ type: 'success', message: 'API key revoked.' });
-    } catch (e) { notify({ type: 'error', message: e.message }); }
-  };
-
-  /* ── AI settings — per-feature helpers ── */
-
-  const loadModelsForFeature = useCallback(async (featureId, provider, apiKey) => {
-    if (!provider || (!apiKey && !apiKey?.trim())) return;
-    setAiModels(prev => ({ ...prev, [featureId]: { models: [], loading: true, error: '' } }));
-    try {
-      const params = apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '';
-      const res = await api.get(`/settings/ai/providers/${provider}/models${params}`);
-      if (res.error) {
-        setAiModels(prev => ({ ...prev, [featureId]: { models: [], loading: false, error: res.error } }));
-      } else {
-        setAiModels(prev => ({ ...prev, [featureId]: { models: res.models || [], loading: false, error: '' } }));
-      }
-    } catch (e) {
-      setAiModels(prev => ({ ...prev, [featureId]: { models: [], loading: false, error: e.message } }));
-    }
-  }, []);
-
-  const saveAiFeature = async (featureId, overrides = {}) => {
-    const f = { ...(aiFeatures[featureId] || {}), ...overrides };
-    try {
-      await api.post(`/settings/ai/${featureId}`, {
-        enabled: f.enabled,
-        provider: f.provider,
-        model: f.model,
-        api_key: f.api_key,
-      });
-      notify({ type: 'success', message: 'AI settings saved' });
+      const r = await api.post('/api-keys', { name: newKeyName.trim(), expires_at: newKeyExpiry || null });
+      setCreatedKey(r);
+      setNewKeyName('');
+      setNewKeyExpiry('');
       loadAll();
-    } catch (e) { notify({ type: 'error', message: e.message }); }
+    } catch (err) { notify({ type: 'error', message: err.message }); }
   };
 
-  const verifyAiFeature = async (featureId) => {
-    const f = aiFeatures[featureId] || {};
-    const hasProvider = f.provider;
-    const hasModel = f.model;
-    const hasKey = f.api_key || f.api_key_set;
-    const missing = [];
-    if (!hasProvider) missing.push('provider');
-    if (!hasModel) missing.push('model');
-    if (!hasKey) missing.push('API key');
-    if (missing.length) {
-      return notify({ type: 'error', message: `Please provide: ${missing.join(', ')}` });
-    }
-    setAiVerifying(prev => ({ ...prev, [featureId]: true }));
-    setAiVerifyResult(prev => ({ ...prev, [featureId]: null }));
+  const revokeApiKey = async (id) => {
+    if (!await confirm('Revoke this API key?')) return;
     try {
-      const res = await api.post(`/settings/ai/${featureId}/verify`, {
-        provider: f.provider,
-        model: f.model,
-        api_key: f.api_key,
-      });
-      setAiVerifyResult(prev => ({ ...prev, [featureId]: res }));
-      if (res.ok) {
-        // Mark as tested locally so the UI reflects the new state immediately
-        setAiFeatures(prev => ({
-          ...prev,
-          [featureId]: { ...prev[featureId], connection_tested: true, last_error: '' },
-        }));
-        notify({ type: 'success', message: 'Credentials verified ✓' });
-      } else {
-        notify({ type: 'error', message: `Verification failed: ${res.error}` });
-      }
-    } catch (e) {
-      setAiVerifyResult(prev => ({ ...prev, [featureId]: { ok: false, error: e.message } }));
-      notify({ type: 'error', message: e.message });
-    } finally {
-      setAiVerifying(prev => ({ ...prev, [featureId]: false }));
-    }
+      await api.del(`/api-keys/${id}`);
+      setApiKeys(k => k.filter(x => x.id !== id));
+    } catch (err) { notify({ type: 'error', message: err.message }); }
   };
 
-  // Auto-fetch models whenever provider or api_key changes for any feature
-  const prevAiFeaturesRef = useRef({});
-  useEffect(() => {
-    const prev = prevAiFeaturesRef.current;
-    for (const [fid, f] of Object.entries(aiFeatures)) {
-      const p = prev[fid] || {};
-      const providerChanged = f.provider !== p.provider;
-      const keyChanged = f.api_key !== p.api_key;
-      if ((providerChanged || keyChanged) && f.provider && (f.api_key || f.api_key_set)) {
-        loadModelsForFeature(fid, f.provider, f.api_key || '');
-      }
-    }
-    prevAiFeaturesRef.current = aiFeatures;
-  }, [aiFeatures, loadModelsForFeature]);
-
-  /* ── event checkbox toggler ────────────────────────────────────────────── */
-  const toggleEvent = (events, setEvents, evt) => {
-    setEvents(events.includes(evt) ? events.filter(e => e !== evt) : [...events, evt]);
+  const createWebhook = async (e) => {
+    e.preventDefault();
+    if (!newWh.url) return;
+    try {
+      const r = await api.post('/webhooks', newWh);
+      setWebhooks(w => [...w, r]);
+      setNewWh({ url: '', description: '', events: [] });
+    } catch (err) { notify({ type: 'error', message: err.message }); }
   };
 
-  /* ── event sections for grouped display ─────────────────────────────── */
-  const EVENT_SECTIONS = [
-    { label: 'Email Events', events: eventTypes.filter(e => e.startsWith('email.')) },
-    { label: 'Lead Events',  events: eventTypes.filter(e => e.startsWith('lead.')) },
-    { label: 'System Events', events: eventTypes.filter(e => !e.startsWith('email.') && !e.startsWith('lead.')) },
-  ].filter(s => s.events.length > 0);
-
-  const EVENT_LABELS = {
-    'email.sent': 'Email Sent',
-    'email.opened': 'Email Opened',
-    'email.clicked': 'Link Clicked',
-    'email.bounced': 'Email Bounced',
-    'lead.replied': 'Lead Replied',
-    'lead.unsubscribed': 'Lead Unsubscribed',
-    'lead.status_changed': 'Status Changed',
-    'lead.interested': 'Lead Interested (AI)',
-    'lead.not_interested': 'Lead Not Interested (AI)',
-    'daily_limit': 'Daily Limit Hit',
-    'rate_limit': 'Rate Limit',
-    'token_expired': 'Token Expired',
+  const deleteWebhook = async (id) => {
+    if (!await confirm('Delete this webhook?')) return;
+    try {
+      await api.del(`/webhooks/${id}`);
+      setWebhooks(w => w.filter(x => x.id !== id));
+    } catch (err) { notify({ type: 'error', message: err.message }); }
   };
 
-  const isAllEvents = (events) => eventTypes.length > 0 && events.length === eventTypes.length;
-  const whEventMode = (events) => isAllEvents(events) ? 'all' : 'specific';
-
-  const toggleSectionEvents = (sectionEvents, currentEvents, setEvents) => {
-    const allSelected = sectionEvents.every(e => currentEvents.includes(e));
-    if (allSelected) {
-      setEvents(currentEvents.filter(e => !sectionEvents.includes(e)));
-    } else {
-      setEvents([...new Set([...currentEvents, ...sectionEvents])]);
-    }
+  const saveWebhook = async (id) => {
+    try {
+      const r = await api.patch(`/webhooks/${id}`, editForm);
+      setWebhooks(w => w.map(x => x.id === id ? r : x));
+      setEditingId(null);
+    } catch (err) { notify({ type: 'error', message: err.message }); }
   };
 
-  /* ── Reusable webhook event selector component ─────────────────────── */
-  const EventSelector = ({ events, onChange }) => {
-    const mode = whEventMode(events);
+  const testWebhookEvent = async () => {
+    if (!testEventWh || !testEventType) return;
+    try {
+      const r = await api.post(`/webhooks/${testEventWh}/test`, { event_type: testEventType });
+      setTestEventResult(r);
+    } catch (err) { setTestEventResult({ error: err.message }); }
+  };
+
+  const addKnownIp = async (e) => {
+    e.preventDefault();
+    if (!newIpAddress.trim()) return;
+    try {
+      const r = await api.post('/settings/known-ips', { ip: newIpAddress.trim() });
+      setKnownIps(r.ips || []);
+      setNewIpAddress('');
+    } catch (err) { notify({ type: 'error', message: err.message }); }
+  };
+
+  const removeKnownIp = async (ip) => {
+    try {
+      const r = await api.del(`/settings/known-ips/${encodeURIComponent(ip)}`);
+      setKnownIps(r.ips || []);
+    } catch (err) { notify({ type: 'error', message: err.message }); }
+  };
+
+  /* ── EventSelector ── */
+  const EventSelector = useCallback(({ value, onChange }) => {
+    const EMAIL_EVENTS = eventTypes.filter(e => e.startsWith('email.'));
+    const LEAD_EVENTS = eventTypes.filter(e => e.startsWith('lead.'));
+    const SYSTEM_EVENTS = eventTypes.filter(e => !e.startsWith('email.') && !e.startsWith('lead.'));
+
+    const allSelected = eventTypes.length > 0 && value.length === eventTypes.length;
+    const specificMode = !allSelected || value.length < eventTypes.length;
+
+    const toggleGroup = (group) => {
+      const allIn = group.every(e => value.includes(e));
+      if (allIn) onChange(value.filter(e => !group.includes(e)));
+      else onChange([...new Set([...value, ...group])]);
+    };
+
     return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-medium text-gray-600">Events:</span>
-          <select
-            className="border rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
-            value={mode}
-            onChange={e => {
-              if (e.target.value === 'all') onChange([...eventTypes]);
-              else onChange([]);
-            }}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.25rem' }}>
+          <button
+            type="button"
+            onClick={() => onChange(eventTypes)}
+            className={`st-pill ${!specificMode ? 'st-pill-gold' : ''}`}
+            style={{ border: '1px solid var(--do-border)', cursor: 'pointer', background: !specificMode ? undefined : 'transparent' }}
           >
-            <option value="all">All Events</option>
-            <option value="specific">Specific Events</option>
-          </select>
+            All Events
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className={`st-pill ${specificMode ? 'st-pill-gold' : ''}`}
+            style={{ border: '1px solid var(--do-border)', cursor: 'pointer', background: specificMode ? undefined : 'transparent' }}
+          >
+            Specific
+          </button>
         </div>
-        {mode === 'specific' && (
-          <div className="border rounded-lg p-3 bg-gray-50 space-y-3">
-            {EVENT_SECTIONS.map(section => {
-              const allInSection = section.events.every(e => events.includes(e));
-              const someInSection = section.events.some(e => events.includes(e));
-              return (
-                <div key={section.label}>
-                  <label className="flex items-center gap-2 cursor-pointer mb-1.5">
+        {specificMode && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {[['Email', EMAIL_EVENTS], ['Lead', LEAD_EVENTS], ['System', SYSTEM_EVENTS]].map(([group, evts]) => (
+              evts.length > 0 && (
+                <div key={group}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--do-text-muted)', marginBottom: '0.25rem', cursor: 'pointer' }}>
                     <input
                       type="checkbox"
-                      checked={allInSection}
-                      ref={el => { if (el) el.indeterminate = someInSection && !allInSection; }}
-                      onChange={() => toggleSectionEvents(section.events, events, onChange)}
-                      className="rounded"
+                      checked={evts.every(e => value.includes(e))}
+                      ref={el => { if (el) el.indeterminate = evts.some(e => value.includes(e)) && !evts.every(e => value.includes(e)); }}
+                      onChange={() => toggleGroup(evts)}
                     />
-                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{section.label}</span>
+                    {group} Events
                   </label>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 pl-6">
-                    {section.events.map(evt => (
-                      <label key={evt} className="flex items-center gap-2 cursor-pointer py-0.5">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', paddingLeft: '1.25rem' }}>
+                    {evts.map(ev => (
+                      <label key={ev} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.72rem', cursor: 'pointer' }}>
                         <input
                           type="checkbox"
-                          checked={events.includes(evt)}
-                          onChange={() => toggleEvent(events, onChange, evt)}
-                          className="rounded"
+                          checked={value.includes(ev)}
+                          onChange={e => {
+                            if (e.target.checked) onChange([...value, ev]);
+                            else onChange(value.filter(x => x !== ev));
+                          }}
                         />
-                        <span className="text-sm text-gray-700">{EVENT_LABELS[evt] || evt}</span>
-                        <span className="text-[10px] text-gray-400 font-mono">{evt}</span>
+                        <span style={{ fontFamily: 'ui-monospace, Consolas, monospace', color: 'var(--do-text)' }}>{ev}</span>
                       </label>
                     ))}
                   </div>
                 </div>
-              );
-            })}
-            {events.length === 0 && (
-              <p className="text-xs text-amber-600">Select at least one event, or switch to "All Events".</p>
-            )}
+              )
+            ))}
           </div>
-        )}
-        {mode === 'all' && (
-          <p className="text-xs text-gray-400 pl-1">This webhook will receive all event types.</p>
         )}
       </div>
     );
-  };
+  }, [eventTypes]);
 
-  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  const sections = SECTIONS_BY_TAB[activeTab] || [];
+  const mcpEndpoint = mcpSetup?.endpoint || '';
+  const mcpTools = mcpSetup?.tools || [];
+  const mcpCursorFragment = (mcpSetup?.cursor_fragment || '').replace(/devoutreach/g, 'inboxair').replace(/DEVOUTREACH/g, 'INBOXAIR');
 
+  /* ── render ── */
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header className="shrink-0 px-6 lg:px-8 pt-6 lg:pt-8 pb-0 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-transparent">
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <nav
-          className="mt-4 flex flex-wrap gap-x-1 gap-y-0 items-end"
-          aria-label="Settings sections"
-        >
-          {visibleTabs.map(t => (
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <style>{CSS}</style>
+
+      {/* Hero */}
+      <div className="st-hero">
+        <div className="st-hero-eyebrow">InboxAir / Settings</div>
+        <h1 className="st-hero-title">Settings</h1>
+        <nav className="st-tab-nav">
+          {SETTINGS_TABS.map(tab => (
             <button
-              key={t.id}
-              type="button"
-              onClick={() => selectTab(t.id)}
-              className={
-                'px-3 py-2 text-sm font-medium leading-none transition-colors border-b-2 -mb-px ' +
-                (activeTab === t.id
-                  ? 'border-teal-500 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600')
-              }
+              key={tab.id}
+              className={`st-tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => { setActiveTab(tab.id); setActiveSectionDomId(`settings-${(SECTIONS_BY_TAB[tab.id] || [])[0]?.id}`); if (tabContentRef.current) tabContentRef.current.scrollTop = 0; }}
             >
-              {t.label}
+              {tab.label}
             </button>
           ))}
         </nav>
-      </header>
+      </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row lg:items-stretch">
-        <aside
-          className="flex min-h-0 w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900/60 lg:h-full lg:min-h-0 lg:w-44 lg:border-b-0 lg:border-r lg:bg-gray-100 lg:dark:bg-gray-900/50"
-          aria-label="On this page"
-        >
-          <div className="flex min-h-0 flex-1 flex-col px-4 py-3 lg:py-5 lg:pl-5 lg:pr-3">
-            <p className="mb-2 block shrink-0 text-[10px] font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
-              On this page
-            </p>
-            <nav className="flex min-h-0 flex-1 flex-row flex-wrap content-start gap-1 overflow-y-auto lg:flex-col lg:flex-nowrap">
-              {sectionNav.map(s => {
-                const domId = `settings-${s.id}`;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => scrollToSection(s.id)}
-                    className={
-                      'rounded-md px-2 py-1.5 text-left text-xs transition-colors lg:text-sm whitespace-nowrap lg:whitespace-normal ' +
-                      (activeSectionDomId === domId
-                        ? 'bg-primary/15 text-primary ring-1 ring-primary/30 dark:bg-primary/20 font-semibold'
-                        : 'text-gray-700 hover:bg-gray-200/80 hover:text-primary dark:text-gray-300 dark:hover:bg-gray-800/80')
-                    }
-                  >
-                    {s.label}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
+      {/* Body */}
+      <div className="st-layout">
+        {/* Sidebar */}
+        <aside className="st-sidebar">
+          {sections.map(sec => (
+            <button
+              key={sec.id}
+              className={`st-sidebar-item ${activeSectionDomId === `settings-${sec.id}` ? 'active' : ''}`}
+              onClick={() => scrollToSection(`settings-${sec.id}`)}
+            >
+              {sec.label}
+            </button>
+          ))}
         </aside>
 
-        <div
-          ref={tabContentRef}
-          className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-6 lg:px-8"
-        >
+        {/* Content */}
+        <div className="st-content" ref={tabContentRef}>
 
-        {activeTab === 'general' && (
-          <>
-        <section id="settings-scheduling" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">Scheduling</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Controls how Recalculate All Campaigns distributes emails.</p>
-          <div className="space-y-3">
-            <label className="flex gap-2 items-start cursor-pointer">
-              <input type="radio" name="strategy" value="priority" checked={strategy === 'priority'} onChange={() => submitStrategy('priority')} />
-              <span>
-                <strong>Priority by campaign</strong><br />
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Campaigns processed in ascending priority order.{' '}
-                  <a href="/campaigns" className="text-teal-500 underline">Reorder campaigns</a>
-                </span>
-              </span>
-            </label>
-            <label className="flex gap-2 items-start cursor-pointer">
-              <input type="radio" name="strategy" value="round_robin" checked={strategy === 'round_robin'} onChange={() => submitStrategy('round_robin')} />
-              <span>
-                <strong>Round-robin distribution</strong><br />
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Inbox capacity divided evenly across active campaigns.
-                </span>
-              </span>
-            </label>
-          </div>
-        </section>
+          {/* ── GENERAL ── */}
+          {activeTab === 'general' && (
+            <>
+              <section className="st-section" id="settings-invite">
+                <h2 className="st-section-title">Invite Team</h2>
+                <InviteTeamMember />
+                <TeamMembersList />
+              </section>
 
-        <section id="settings-appearance" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">Appearance</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Theme follows your choice; System uses your device light/dark setting (default).</p>
-          <div className="space-y-3">
-            <label className="flex gap-2 items-start cursor-pointer">
-              <input
-                type="radio"
-                name="appearance"
-                value="system"
-                checked={themePreference === 'system'}
-                onChange={() => setThemePreference('system')}
-              />
-              <span>
-                <strong>System</strong>
-                <br />
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Match your OS or browser appearance automatically.
-                </span>
-              </span>
-            </label>
-            <label className="flex gap-2 items-start cursor-pointer">
-              <input
-                type="radio"
-                name="appearance"
-                value="light"
-                checked={themePreference === 'light'}
-                onChange={() => setThemePreference('light')}
-              />
-              <span>
-                <strong>Light</strong>
-                <br />
-                <span className="text-xs text-gray-500 dark:text-gray-400">Always use light theme.</span>
-              </span>
-            </label>
-            <label className="flex gap-2 items-start cursor-pointer">
-              <input
-                type="radio"
-                name="appearance"
-                value="dark"
-                checked={themePreference === 'dark'}
-                onChange={() => setThemePreference('dark')}
-              />
-              <span>
-                <strong>Dark</strong>
-                <br />
-                <span className="text-xs text-gray-500 dark:text-gray-400">Always use dark theme.</span>
-              </span>
-            </label>
-          </div>
-        </section>
-
-        <section id="settings-account" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">Account &amp; Security</h2>
-          {user && (
-            <div className="space-y-4">
-              <div className="text-sm">
-                <span className="text-gray-500 dark:text-gray-400">Logged in as </span>
-                <span className="font-medium">{user.username}</span>
-                <span className="ml-2 text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase">{user.role}</span>
-              </div>
-
-              <Button size="sm" variant="outline" onClick={logout}>Log Out</Button>
-            </div>
-          )}
-        </section>
-
-        <section id="settings-known-ips" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-2 border-b border-gray-200 dark:border-gray-700 pb-2">Known IPs</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Opens and clicks from these IPs are ignored for self-open filtering.
-          </p>
-          <Button size="sm" variant="outline" onClick={() => setKnownIpsOpen(true)}>
-            Manage Known IPs
-          </Button>
-        </section>
-          </>
-        )}
-
-        {activeTab === 'setup' && (
-          <>
-        {/* ──────────────── Gmail Sync ──────────────── */}
-        <section id="settings-gmail-sync" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-1 border-b pb-2">Gmail Sync</h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Configure how Emissary detects replies from Gmail inboxes. Optional — polling works
-            without these settings, but push notifications make reply detection instant.
-          </p>
-          <div className="space-y-4">
-
-            {/* Push Topic */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Google Pub/Sub Topic</label>
-              <input
-                type="text"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                placeholder="projects/your-project/topics/gmail-replies"
-                value={gmailSync.push_topic}
-                onChange={e => setGmailSync(prev => ({ ...prev, push_topic: e.target.value }))}
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Create a Pub/Sub topic in Google Cloud Console and enter its full resource name here.
-                Leave blank to use polling only.
-              </p>
-            </div>
-
-            {/* Webhook token */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Push Webhook Token</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  className="flex-1 border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-300"
-                  placeholder="auto-generated on first startup"
-                  value={gmailSync.webhook_token}
-                  onChange={e => setGmailSync(prev => ({ ...prev, webhook_token: e.target.value }))}
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    navigator.clipboard.writeText(
-                      window.location.origin + '/api/unibox/gmail/push?token=' + gmailSync.webhook_token
-                    );
-                    notify({ type: 'success', message: 'Push URL copied!' });
-                  }}
-                >
-                  Copy URL
-                </Button>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">
-                Append this token to your Pub/Sub push endpoint:
-                {' '}<code className="bg-gray-100 dark:bg-gray-800 rounded px-1">/api/unibox/gmail/push?token=…</code>
-              </p>
-            </div>
-
-            {/* Sync interval */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Polling Interval (minutes)</label>
-              <input
-                type="number"
-                min="1"
-                max="60"
-                className="w-28 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                value={gmailSync.sync_interval_minutes}
-                onChange={e => setGmailSync(prev => ({ ...prev, sync_interval_minutes: Math.max(1, parseInt(e.target.value) || 1) }))}
-              />
-              <p className="text-xs text-gray-400 mt-1">How often to poll Gmail for new replies (fallback when push is not configured).</p>
-            </div>
-
-            <Button
-              size="sm"
-              disabled={gmailSyncSaving}
-              onClick={async () => {
-                setGmailSyncSaving(true);
-                try {
-                  await api.post('/settings/gmail-sync', gmailSync);
-                  savedGmailSyncRef.current = { ...gmailSync };
-                  notify({ type: 'success', message: 'Gmail sync settings saved' });
-                } catch (e) {
-                  notify({ type: 'error', message: e.message });
-                } finally {
-                  setGmailSyncSaving(false);
-                }
-              }}
-            >
-              {gmailSyncSaving ? 'Saving…' : 'Save'}
-            </Button>
-          </div>
-        </section>
-
-        {user?.role === 'admin' && (
-        <section id="settings-backup-restore" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-1 border-b pb-2 dark:border-gray-700">Backup & restore</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Backup and restore the database containing all your leads, campaigns, and other data.
-          </p>
-
-          <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/80 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 mb-4">
-            <strong>Password loss:</strong> if you encrypt a backup and lose the password, the file cannot be decrypted — your data is
-            unrecoverable from that file. The optional hint is stored in the file in plain text; it is not a secret.
-          </div>
-
-          <h3 className="text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">Backup settings</h3>
-          <div className="space-y-4 text-sm mb-8 rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-gray-50/50 dark:bg-gray-900/30">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={backupCfg.encrypt_backups}
-                onChange={e => {
-                  const on = e.target.checked;
-                  setBackupCfg(prev => ({
-                    ...prev,
-                    encrypt_backups: on,
-                    ...(on ? {} : { backup_encryption_password: '' }),
-                  }));
-                }}
-              />
-              <span>Encrypt backups with password (recommended)</span>
-            </label>
-            {!backupCfg.encrypt_backups && (
-              <p className="text-xs text-amber-700 dark:text-amber-400">
-                Unencrypted backups are readable by anyone with the file. Download, Run backup now, and scheduled backups will not use encryption.
-              </p>
-            )}
-            {backupCfg.encrypt_backups && (
-              <div className="space-y-2 max-w-md">
-                {backupMeta.backup_encryption_configured && (
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    A password is already saved. Leave the fields blank to keep it, or enter a new password to replace it.
-                  </p>
-                )}
-                <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    Backup password (min. {BACKUP_MIN_PASSWORD_LEN} characters)
-                  </label>
-                  <input
-                    type="password"
-                    className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-900 dark:border-gray-600"
-                    value={backupCfg.backup_encryption_password}
-                    onChange={e => setBackupCfg(prev => ({ ...prev, backup_encryption_password: e.target.value }))}
-                    autoComplete="new-password"
-                    placeholder={backupMeta.backup_encryption_configured ? 'Leave blank to keep existing password' : ''}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    Password hint (optional, stored in plain text in each .qbk)
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-900 dark:border-gray-600"
-                    value={backupCfg.backup_encryption_hint}
-                    onChange={e => setBackupCfg(prev => ({ ...prev, backup_encryption_hint: e.target.value }))}
-                    maxLength={200}
-                  />
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Applies to downloads, Run backup now, and scheduled backups when encryption is enabled.
-                </p>
-              </div>
-            )}
-
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2 space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={backupCfg.schedule_enabled}
-                  onChange={e => setBackupCfg(prev => ({ ...prev, schedule_enabled: e.target.checked }))}
-                />
-                <span>Enable scheduled backup</span>
-              </label>
-              {backupCfg.schedule_enabled && (
-                <div className="space-y-3 sm:border-l-2 border-gray-200 dark:border-gray-600 sm:pl-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      Cron (minute hour day month day-of-week, UTC)
-                    </label>
-                    <input
-                      className="w-full max-w-md border rounded-lg px-3 py-2 text-sm font-mono dark:bg-gray-900 dark:border-gray-600"
-                      value={backupCfg.cron_expression}
-                      onChange={e => setBackupCfg(prev => ({ ...prev, cron_expression: e.target.value }))}
-                      placeholder="0 3 * * *"
-                    />
-                  </div>
-                  {!backupMeta.local_disk_available && (
-                    <p className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
-                      Saving backups on the server requires the deployment to set{' '}
-                      <code className="text-[11px]">Reach_LOCAL_DISK_BACKUPS</code> and a persistent{' '}
-                      <code className="text-[11px]">backups</code> folder (Docker Compose in this repo does). On hosts without that, use{' '}
-                      <strong>POST to webhook</strong> below.
-                    </p>
-                  )}
-                  <label className={`flex items-center gap-2 ${backupMeta.local_disk_available ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
-                    <input
-                      type="checkbox"
-                      disabled={!backupMeta.local_disk_available}
-                      checked={backupCfg.save_local}
-                      onChange={e => setBackupCfg(prev => ({ ...prev, save_local: e.target.checked }))}
-                    />
-                    <span>Save to server disk (keeps 10 newest files; older ones are removed)</span>
-                  </label>
-                  <div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      Folder (under the app directory, default <code className="text-[11px]">backups</code>)
-                    </label>
-                    <input
-                      className="w-full max-w-md border rounded-lg px-3 py-2 text-sm font-mono dark:bg-gray-900 dark:border-gray-600 disabled:opacity-50"
-                      disabled={!backupMeta.local_disk_available}
-                      value={backupCfg.local_relative_path}
-                      onChange={e => setBackupCfg(prev => ({ ...prev, local_relative_path: e.target.value }))}
-                      placeholder="backups"
-                    />
-                    {backupMeta.local_disk_available && backupMeta.local_backup_resolved && (
-                      <p className="text-xs text-gray-400 mt-1 break-all">
-                        Resolves to: {backupMeta.local_backup_resolved}
-                      </p>
-                    )}
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={backupCfg.send_webhook}
-                      onChange={e => setBackupCfg(prev => ({ ...prev, send_webhook: e.target.checked }))}
-                    />
-                    <span>POST backup file to webhook URL</span>
-                  </label>
-                  <div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Webhook URL</label>
-                    <input
-                      type="url"
-                      className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-900 dark:border-gray-600"
-                      value={backupCfg.webhook_url}
-                      onChange={e => setBackupCfg(prev => ({ ...prev, webhook_url: e.target.value }))}
-                      placeholder="https://example.com/hooks/backup"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Authorization header (optional)</label>
-                    <input
-                      type="text"
-                      name="backup_webhook_authorization"
-                      autoComplete="off"
-                      spellCheck={false}
-                      data-1p-ignore
-                      data-lpignore="true"
-                      className="w-full border rounded-lg px-3 py-2 text-sm font-mono dark:bg-gray-900 dark:border-gray-600"
-                      value={backupCfg.webhook_auth_header}
-                      onChange={e => setBackupCfg(prev => ({ ...prev, webhook_auth_header: e.target.value }))}
-                      placeholder={backupMeta.webhook_auth_configured ? `Leave blank to keep existing password` : 'Bearer …'}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <Button size="sm" disabled={backupSaving} onClick={saveBackupSettings}>
-              {backupSaving ? 'Saving…' : 'Save settings'}
-            </Button>
-          </div>
-
-          <h3
-            id="settings-backup-manual"
-            className="text-sm font-semibold mb-2 scroll-mt-6 text-gray-900 dark:text-gray-100"
-          >
-            Download, run, or restore
-          </h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Uses encryption and schedule options from <strong>Backup settings</strong> above. Save settings before downloading if you changed them.
-          </p>
-          <div className="space-y-4 mb-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={
-                  backupDownloadBusy ||
-                  (backupCfg.encrypt_backups &&
-                    !backupMeta.backup_encryption_configured &&
-                    (backupCfg.backup_encryption_password || '').trim().length < BACKUP_MIN_PASSWORD_LEN)
-                }
-                onClick={async () => {
-                  setBackupDownloadBusy(true);
-                  try {
-                    const wantEnc = backupCfg.encrypt_backups;
-                    const draftPw = (backupCfg.backup_encryption_password || '').trim();
-                    let payload;
-                    if (!wantEnc) {
-                      payload = {
-                        use_saved_encryption: false,
-                        encrypt: false,
-                        password: '',
-                        password_hint: '',
-                      };
-                    } else if (draftPw.length >= BACKUP_MIN_PASSWORD_LEN) {
-                      payload = {
-                        use_saved_encryption: false,
-                        encrypt: true,
-                        password: draftPw,
-                        password_hint: (backupCfg.backup_encryption_hint || '').trim(),
-                      };
-                    } else if (backupMeta.backup_encryption_configured) {
-                      payload = {
-                        use_saved_encryption: true,
-                        encrypt: true,
-                        password: '',
-                        password_hint: '',
-                      };
-                    } else {
-                      payload = {
-                        use_saved_encryption: false,
-                        encrypt: false,
-                        password: '',
-                        password_hint: '',
-                      };
-                    }
-                    const res = await postJsonForDownload('/settings/backup/download', payload);
-                    const blob = await res.blob();
-                    const dispo = res.headers.get('Content-Disposition');
-                    const m = dispo && dispo.match(/filename="([^"]+)"/);
-                    const name = m ? m[1] : 'Emissary-backup.qbk';
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = name;
-                    a.click();
-                    URL.revokeObjectURL(a.href);
-                    notify({ type: 'success', message: 'Backup downloaded' });
-                  } catch (e) {
-                    notify({ type: 'error', message: e.message || 'Download failed' });
-                  } finally {
-                    setBackupDownloadBusy(false);
-                  }
-                }}
-              >
-                {backupDownloadBusy ? 'Preparing…' : 'Download backup'}
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={backupRunning}
-                onClick={async () => {
-                  setBackupRunning(true);
-                  try {
-                    const r = await api.post('/settings/backup/run', {});
-                    const parts = [];
-                    if (r.local_path) parts.push(`Saved ${r.local_path}`);
-                    if (r.webhook_ok) parts.push('Webhook sent');
-                    if (r.webhook_error) parts.push(`Webhook error: ${r.webhook_error}`);
-                    if (r.local_skipped) parts.push(r.local_skipped);
-                    notify({ type: 'success', message: parts.join(' · ') || 'Backup completed' });
-                  } catch (e) {
-                    notify({ type: 'error', message: e.message });
-                  } finally {
-                    setBackupRunning(false);
-                  }
-                }}
-              >
-                {backupRunning ? 'Running…' : 'Run backup now'}
-              </Button>
-            </div>
-
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
-              <p className="text-sm font-medium mb-2">Restore from file</p>
-              <p className="text-xs text-amber-700 dark:text-amber-400 mb-2">
-                Restoring replaces the entire database. After you choose a file, we show what is in the backup before you enter a password (if encrypted).
-              </p>
-              <div className="flex items-stretch gap-2 mb-2">
-                <FileUploadArea
-                  key={restoreFileKey}
-                  size="full"
-                  className="flex-1 min-w-0"
-                  accept=".qbk,application/octet-stream"
-                  disabled={restoreMetaBusy || restorePreviewBusy || restoreExecuteBusy}
-                  onChange={e => {
-                    setRestoreFile(e.target.files?.[0] || null);
-                    setRestorePreview(null);
-                  }}
-                >
-                  {restoreFile ? (
-                    <span className="truncate text-gray-900 dark:text-gray-100">{restoreFile.name}</span>
-                  ) : (
-                    <span className="text-gray-500 dark:text-gray-400">Choose backup file (.qbk)</span>
-                  )}
-                </FileUploadArea>
-                {restoreFile ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 px-3"
-                    title="Remove file"
-                    disabled={restoreMetaBusy || restorePreviewBusy || restoreExecuteBusy}
-                    onClick={clearRestoreWizard}
-                  >
-                    ×
-                  </Button>
-                ) : null}
-              </div>
-
-              {restoreMetaBusy && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Reading backup…</p>
-              )}
-
-              {restoreMeta && !restoreMetaBusy && !restorePreview && (
-                <div className="rounded-lg border border-gray-200 dark:border-gray-600 p-3 text-sm space-y-3 mb-3 bg-gray-50 dark:bg-gray-900/40">
-                  {restoreMeta.password_hint ? (
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                      Hint: <span className="font-mono">{restoreMeta.password_hint}</span>
-                    </p>
-                  ) : null}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <p className="font-semibold text-gray-700 dark:text-gray-300 mb-1">This backup</p>
-                      <ul className="space-y-0.5 text-gray-600 dark:text-gray-400">
-                        <li>Backed up: {restoreMeta.backup_preview?.backed_up_at ? new Date(restoreMeta.backup_preview.backed_up_at).toLocaleString() : '—'}</li>
-                        <li>Leads: {restoreMeta.backup_preview?.lead_count ?? '—'}</li>
-                        <li>Inboxes: {restoreMeta.backup_preview?.inbox_count ?? '—'}</li>
-                        <li>Campaigns: {restoreMeta.backup_preview?.campaign_count ?? '—'}</li>
-                        <li>Users: {restoreMeta.backup_preview?.user_count ?? '—'}</li>
-                        <li>Admins: {(restoreMeta.backup_preview?.admin_emails || []).join(', ') || '—'}</li>
-                        <li>Encrypted: {restoreMeta.encrypted ? 'yes' : 'no'}</li>
-                      </ul>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Current database (will be replaced)</p>
-                      <ul className="space-y-0.5 text-gray-600 dark:text-gray-400">
-                        <li>Leads: {restoreMeta.current_database?.lead_count ?? '—'}</li>
-                        <li>Inboxes: {restoreMeta.current_database?.inbox_count ?? '—'}</li>
-                        <li>Campaigns: {restoreMeta.current_database?.campaign_count ?? '—'}</li>
-                        <li>Users: {restoreMeta.current_database?.user_count ?? '—'}</li>
-                        <li>Admins: {(restoreMeta.current_database?.admin_emails || []).join(', ') || '—'}</li>
-                      </ul>
-                    </div>
-                  </div>
-                  <p className="text-xs text-amber-800 dark:text-amber-200">
-                    For encrypted backups, admin emails stay masked until the password is verified.
-                  </p>
-                </div>
-              )}
-
-              {restoreMeta && !restorePreview && restoreMeta.encrypted && (
-                <div className="max-w-md mb-2">
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    Backup password
-                  </label>
-                  <input
-                    type="password"
-                    className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-900 dark:border-gray-600"
-                    placeholder={`At least ${BACKUP_MIN_PASSWORD_LEN} characters`}
-                    value={restorePassword}
-                    onChange={e => setRestorePassword(e.target.value)}
-                    disabled={restorePreviewBusy || restoreExecuteBusy}
-                    autoComplete="off"
-                  />
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2 mb-3">
-                {restoreMeta && !restorePreview && !restoreMeta.encrypted && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!restoreFile || restorePreviewBusy || restoreMetaBusy}
-                    onClick={async () => {
-                      setRestorePreviewBusy(true);
-                      setRestorePreview(null);
-                      try {
-                        const data = await api.uploadMultipart('/settings/backup/restore/preview', restoreFile, {});
-                        setRestorePreview(data);
-                      } catch (e) {
-                        notify({ type: 'error', message: e.message });
-                      } finally {
-                        setRestorePreviewBusy(false);
-                      }
-                    }}
-                  >
-                    {restorePreviewBusy ? 'Checking…' : 'Verify backup'}
-                  </Button>
-                )}
-                {restoreMeta && !restorePreview && restoreMeta.encrypted && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={
-                      !restoreFile ||
-                      restorePreviewBusy ||
-                      restoreMetaBusy ||
-                      restorePassword.length < BACKUP_MIN_PASSWORD_LEN
-                    }
-                    onClick={async () => {
-                      setRestorePreviewBusy(true);
-                      setRestorePreview(null);
-                      try {
-                        const data = await api.uploadMultipart('/settings/backup/restore/preview', restoreFile, {
-                          password: restorePassword,
-                        });
-                        setRestorePreview(data);
-                      } catch (e) {
-                        notify({ type: 'error', message: e.message });
-                      } finally {
-                        setRestorePreviewBusy(false);
-                      }
-                    }}
-                  >
-                    {restorePreviewBusy ? 'Checking…' : 'Verify password'}
-                  </Button>
-                )}
-              </div>
-
-              {restorePreview && (
-                <div className="rounded-lg border border-gray-200 dark:border-gray-600 p-3 text-sm space-y-3 mb-3 bg-gray-50 dark:bg-gray-900/40">
-                  <p className="font-medium text-gray-900 dark:text-gray-100">Verified — confirm restore</p>
-                  {restorePreview.password_hint ? (
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                      Hint: <span className="font-mono">{restorePreview.password_hint}</span>
-                    </p>
-                  ) : null}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <p className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Backup snapshot</p>
-                      <ul className="space-y-0.5 text-gray-600 dark:text-gray-400">
-                        <li>Backed up: {restorePreview.backup?.backed_up_at ? new Date(restorePreview.backup.backed_up_at).toLocaleString() : '—'}</li>
-                        <li>Leads: {restorePreview.backup?.lead_count ?? '—'}</li>
-                        <li>Inboxes: {restorePreview.backup?.inbox_count ?? '—'}</li>
-                        <li>Campaigns: {restorePreview.backup?.campaign_count ?? '—'}</li>
-                        <li>Users: {restorePreview.backup?.user_count ?? '—'}</li>
-                        <li>Admins: {(restorePreview.backup?.admin_emails || []).join(', ') || '—'}</li>
-                        <li>Encrypted: {restorePreview.backup?.encrypted ? 'yes' : 'no'}</li>
-                      </ul>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Current database (will be replaced)</p>
-                      <ul className="space-y-0.5 text-gray-600 dark:text-gray-400">
-                        <li>Leads: {restorePreview.current_database?.lead_count ?? '—'}</li>
-                        <li>Inboxes: {restorePreview.current_database?.inbox_count ?? '—'}</li>
-                        <li>Campaigns: {restorePreview.current_database?.campaign_count ?? '—'}</li>
-                        <li>Users: {restorePreview.current_database?.user_count ?? '—'}</li>
-                        <li>Admins: {(restorePreview.current_database?.admin_emails || []).join(', ') || '—'}</li>
-                      </ul>
-                    </div>
-                  </div>
-                  {(restorePreview.current_database?.lead_count > 0 ||
-                    restorePreview.current_database?.user_count > 0) && (
-                    <div className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded px-2 py-2">
-                      You are about to overwrite existing data. Download a backup of your current state first if you need to keep it.
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-2"
-                        onClick={() => document.getElementById('settings-backup-manual')?.scrollIntoView({ behavior: 'smooth' })}
-                      >
-                        Jump to download
-                      </Button>
-                    </div>
-                  )}
-                  <p className="text-xs text-red-700 dark:text-red-400">
-                    This cannot be undone. Encrypted backups are useless without the password.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={restoreExecuteBusy}
-                    onClick={async () => {
-                      const ok = await confirm(
-                        'Replace the live database with this backup? This permanently deletes current data in the database.',
-                      );
-                      if (!ok) return;
-                      setRestoreExecuteBusy(true);
-                      try {
-                        await api.post('/settings/backup/restore/execute', {
-                          restore_token: restorePreview.restore_token,
-                        });
-                        notify({ type: 'success', message: 'Restore completed. Reloading…' });
-                      } catch (e) {
-                        notify({ type: 'error', message: e.message });
-                      } finally {
-                        setRestoreExecuteBusy(false);
-                      }
-                    }}
-                  >
-                    {restoreExecuteBusy ? 'Restoring…' : 'Confirm and restore'}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-        )}
-          </>
-        )}
-
-        {activeTab === 'features' && (
-          <>
-        <section id="settings-ai" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-1 border-b pb-2">AI Features</h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Each AI feature can use a different provider and model. Configure the provider and
-            API key first — the available models will load automatically in the background.
-          </p>
-
-          {Object.values(aiFeatures).map(feature => {
-            const fid = feature.id;
-            const isOpen = !!aiExpanded[fid];
-            const fm = aiModels[fid] || { models: [], loading: false, error: '' };
-            const provSearch = aiProviderSearch[fid] ?? null; // null = not focused
-            const modSearch = aiModelSearch[fid] || '';
-            const verifying = aiVerifying[fid] || false;
-            const verifyResult = aiVerifyResult[fid] || null;
-
-            const setFeature = (updater) => {
-              setAiFeatures(prev => ({ ...prev, [fid]: typeof updater === 'function' ? updater(prev[fid]) : { ...prev[fid], ...updater } }));
-            };
-            const setProvSearch = (v) => setAiProviderSearch(prev => ({ ...prev, [fid]: v }));
-            const setModSearch = (v) => setAiModelSearch(prev => ({ ...prev, [fid]: v }));
-
-            const selectedProviderLabel = feature.provider
-              ? (aiProviders.find(p => p.value === feature.provider)?.label || feature.provider)
-              : '';
-
-            const filteredProviders = (provSearch || '').length > 0
-              ? aiProviders.filter(p => p.label.toLowerCase().includes(provSearch.toLowerCase()) || p.value.toLowerCase().includes(provSearch.toLowerCase()))
-              : aiProviders;
-            const filteredModels = modSearch
-              ? fm.models.filter(m => m.id.toLowerCase().includes(modSearch.toLowerCase()) || (m.name && m.name.toLowerCase().includes(modSearch.toLowerCase())))
-              : fm.models;
-
-            return (
-              <Card key={fid} className="mb-4 overflow-visible">
-                {/* ── Collapsed header (always visible) ── */}
-                <div
-                  className="flex items-center justify-between cursor-pointer select-none"
-                  onClick={() => setAiExpanded(prev => ({ ...prev, [fid]: !prev[fid] }))}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className={`text-gray-400 transition-transform text-xs ${isOpen ? 'rotate-90' : ''}`}>▶</span>
-                    <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{feature.label}</h3>
-                    {feature.enabled
-                      ? <span className="text-[10px] bg-green-100 text-green-700 border border-green-200 rounded-full px-2 py-0.5 font-medium shrink-0">Enabled</span>
-                      : <span className="text-[10px] bg-gray-100 text-gray-500 border rounded-full px-2 py-0.5 font-medium shrink-0">Disabled</span>
-                    }
-                  </div>
-                  {/* Enable toggle — click doesn't propagate to collapse toggle */}
-                  <label
-                    className="flex items-center gap-1.5 cursor-pointer shrink-0 ml-4"
-                    onClick={e => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={feature.enabled}
-                      className="rounded"
-                      onChange={e => {
-                        const next = e.target.checked;
-                        if (next && !feature.connection_tested) {
-                          notify({ type: 'error', message: 'Test the connection successfully before enabling this feature.' });
-                          return;
-                        }
-                        // update state without marking dirty — enabled auto-saves immediately
-                        setAiFeatures(prev => ({ ...prev, [fid]: { ...prev[fid], enabled: next } }));
-                        saveAiFeature(fid, { enabled: next });
-                      }}
-                    />
-                    <span className="text-xs font-medium text-gray-600 whitespace-nowrap">
-                      Enable
-                    </span>
-                  </label>
-                </div>
-
-                {/* ── Expanded body ── */}
-                <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                  <div className={`min-h-0 ${isOpen ? 'overflow-visible' : 'overflow-hidden'}`}>
-                    <div className="mt-4 space-y-4 border-t pt-4">
-                    <p className="text-xs text-gray-500">{feature.description}</p>
-
-                    {/* Step 1 — Provider */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        <span className="text-gray-400 mr-1">1.</span> Provider
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="Search providers…"
-                          className="border rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-teal-300"
-                          value={provSearch !== null ? provSearch : selectedProviderLabel}
-                          onChange={e => setProvSearch(e.target.value)}
-                          onFocus={() => setProvSearch('')}
-                          onBlur={() => setTimeout(() => setProvSearch(null), 200)}
-                        />
-                        {provSearch !== null && filteredProviders.length > 0 && (
-                          <div className="border rounded-lg mt-1 max-h-48 overflow-y-auto bg-white dark:bg-gray-900 shadow-lg z-20 absolute w-full top-full">
-                            {filteredProviders.map(p => (
-                              <button
-                                key={p.value}
-                                type="button"
-                                className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-teal-50 dark:hover:bg-gray-800 ${p.value === feature.provider ? 'bg-teal-50 dark:bg-gray-800 font-medium' : ''}`}
-                                onMouseDown={e => {
-                                  e.preventDefault();
-                                  setFeature({ provider: p.value, model: '', connection_tested: false });
-                                  setProvSearch(null);
-                                  setModSearch('');
-                                }}
-                              >
-                                {p.label}
-                                <span className="text-[10px] text-gray-400 ml-2">{p.value}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Step 2 — API Key */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        <span className="text-gray-400 mr-1">2.</span> API Key
-                      </label>
+              <section className="st-section" id="settings-scheduling">
+                <h2 className="st-section-title">Scheduling</h2>
+                <div className="do-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {[
+                    { value: 'time_based', label: 'Time-based', desc: 'Send emails at a set time each day.' },
+                    { value: 'interval_based', label: 'Interval-based', desc: 'Spread sends evenly across the day.' },
+                  ].map(opt => (
+                    <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer' }}>
                       <input
-                        type="password"
-                        placeholder={feature.api_key_set ? `Saved key: ${feature.api_key_masked}` : 'Enter your API key'}
-                        className="block w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                        value={feature.api_key || ''}
-                        onChange={e => setFeature({ api_key: e.target.value, connection_tested: false })}
+                        type="radio"
+                        name="strategy"
+                        value={opt.value}
+                        checked={strategy === opt.value}
+                        onChange={() => saveStrategy(opt.value)}
+                        style={{ marginTop: '0.15rem', accentColor: 'var(--do-gold-dark)' }}
                       />
-                      {feature.provider && (feature.api_key || feature.api_key_set) && (
-                        <p className="text-[10px] mt-1 text-teal-600">
-                          {fm.loading
-                            ? '⏳ Loading available models…'
-                            : fm.error
-                              ? `⚠️ Could not fetch models: ${fm.error}`
-                              : fm.models.length > 0
-                                ? `✓ ${fm.models.length} models available — select below or type a custom name`
-                                : ''}
-                        </p>
-                      )}
-                    </div>
+                      <div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--do-text)' }}>{opt.label}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--do-text-muted)' }}>{opt.desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </section>
 
-                    {/* Step 3 — Model */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        <span className="text-gray-400 mr-1">3.</span> Model
-                      </label>
-                      <div className="relative">
+              <section className="st-section" id="settings-email-verification">
+                <h2 className="st-section-title">Email Verification</h2>
+                <EmailVerificationSettings />
+              </section>
+
+              <section className="st-section" id="settings-account">
+                <h2 className="st-section-title">Account & Security</h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <ProfileEditSection user={user} />
+                  <ChangePasswordSection user={user} />
+                  <div className="do-card" style={{ padding: '1rem' }}>
+                    <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--do-text)', marginBottom: '0.5rem' }}>Session</p>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--do-text-muted)', marginBottom: '0.75rem' }}>Signed in as <strong>{user?.email}</strong></p>
+                    <button
+                      className="do-btn-outline"
+                      style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}
+                      onClick={async () => { await api.post('/auth/logout', {}); window.location.href = '/login'; }}
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="st-section" id="settings-danger-zone">
+                <h2 className="st-section-title" style={{ color: 'var(--danger)' }}>Danger Zone</h2>
+                <DeleteAccountSection />
+              </section>
+
+              <section className="st-section" id="settings-known-ips">
+                <h2 className="st-section-title">Known IPs</h2>
+                <div className="do-card" style={{ padding: '1rem' }}>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--do-text-muted)', marginBottom: '0.75rem' }}>
+                    Restrict access to specific IP addresses. Your current IP: <code style={{ fontFamily: 'ui-monospace, Consolas, monospace', background: 'var(--do-cream)', padding: '0 0.3rem', borderRadius: '0.2rem' }}>{currentIp}</code>
+                  </p>
+                  <button className="do-btn-gold" onClick={() => setKnownIpsOpen(true)} style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}>
+                    Manage Known IPs ({knownIps.length})
+                  </button>
+                </div>
+              </section>
+            </>
+          )}
+
+          {/* ── SETUP ── */}
+          {activeTab === 'setup' && (
+            <>
+              <section className="st-section" id="settings-gmail-sync">
+                <h2 className="st-section-title">Gmail Sync</h2>
+                <form onSubmit={saveGmailSync} className="do-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                  <div>
+                    <label className="st-field-label">Pub/Sub Topic</label>
+                    <input
+                      className="st-input st-input-mono"
+                      value={gmailSync.pubsub_topic || ''}
+                      onChange={e => setGmailSync(g => ({ ...g, pubsub_topic: e.target.value }))}
+                      placeholder="projects/my-project/topics/gmail"
+                    />
+                  </div>
+                  <div>
+                    <label className="st-field-label">Webhook Token</label>
+                    <input
+                      className="st-input st-input-mono"
+                      value={gmailSync.webhook_token || ''}
+                      onChange={e => setGmailSync(g => ({ ...g, webhook_token: e.target.value }))}
+                      placeholder="secret-token"
+                    />
+                  </div>
+                  <div>
+                    <label className="st-field-label">Polling Interval (minutes)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      className="st-input"
+                      style={{ maxWidth: '8rem' }}
+                      value={gmailSync.polling_interval_minutes || 5}
+                      onChange={e => setGmailSync(g => ({ ...g, polling_interval_minutes: Number(e.target.value) }))}
+                    />
+                  </div>
+                  <div>
+                    <button type="submit" className="do-btn-gold" disabled={gmailSyncSaving} style={{ fontSize: '0.82rem', padding: '0.45rem 1.25rem' }}>
+                      {gmailSyncSaving ? 'Saving…' : 'Save Gmail Sync'}
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              {user?.is_admin && (
+                <section className="st-section" id="settings-backup-restore">
+                  <h2 className="st-section-title">Backup & Restore</h2>
+
+                  {/* Backup config */}
+                  {backupCfg && (
+                    <form onSubmit={saveBackupCfg} className="do-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.875rem', marginBottom: '1rem' }}>
+                      <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--do-text)' }}>Backup Configuration</p>
+                      <div>
+                        <label className="st-field-label">Encryption password</label>
                         <input
-                          type="text"
-                          placeholder={fm.loading ? 'Loading models…' : 'Search or type model name…'}
-                          className="block w-full border rounded-lg p-2 text-sm bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
-                          value={modSearch !== '' ? modSearch : (feature.model || '')}
-                          onChange={e => {
-                            setModSearch(e.target.value);
-                            setFeature({ model: e.target.value, connection_tested: false });
-                          }}
-                          onFocus={() => setModSearch(feature.model || '')}
-                          onBlur={() => setTimeout(() => setModSearch(''), 200)}
+                          type="password"
+                          className="st-input"
+                          value={backupCfg.encryption_password || ''}
+                          onChange={e => setBackupCfg(c => ({ ...c, encryption_password: e.target.value }))}
+                          placeholder="Leave blank for no encryption"
                         />
-                        {modSearch !== '' && filteredModels.length > 0 && (
-                          <div className="border rounded-lg mt-1 max-h-48 overflow-y-auto bg-white dark:bg-gray-900 shadow-lg z-20 absolute w-full top-full">
-                            {filteredModels.slice(0, 50).map(m => (
-                              <button
-                                key={m.id}
-                                type="button"
-                                className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-teal-50 dark:hover:bg-gray-800 ${m.id === feature.model ? 'bg-teal-50 dark:bg-gray-800 font-medium' : ''}`}
-                                onMouseDown={e => {
-                                  e.preventDefault();
-                                  setFeature({ model: m.id, connection_tested: false });
-                                  setModSearch('');
-                                }}
-                              >
-                                {m.id}
-                              </button>
-                            ))}
+                      </div>
+                      <div>
+                        <label className="st-field-label">Schedule (cron)</label>
+                        <input
+                          className="st-input st-input-mono"
+                          value={backupCfg.schedule || ''}
+                          onChange={e => setBackupCfg(c => ({ ...c, schedule: e.target.value }))}
+                          placeholder="0 2 * * *"
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button type="submit" className="do-btn-gold" disabled={backupSaving} style={{ fontSize: '0.82rem', padding: '0.45rem 1.25rem' }}>
+                          {backupSaving ? 'Saving…' : 'Save config'}
+                        </button>
+                        {backupMeta?.last_backup_at && (
+                          <button type="button" className="do-btn-outline" onClick={downloadBackup} disabled={backupDownloadBusy} style={{ fontSize: '0.82rem', padding: '0.45rem 1.25rem' }}>
+                            {backupDownloadBusy ? 'Downloading…' : `Download backup (${new Date(backupMeta.last_backup_at).toLocaleDateString()})`}
+                          </button>
+                        )}
+                        <button type="button" className="do-btn-outline" onClick={runBackup} disabled={backupRunning} style={{ fontSize: '0.82rem', padding: '0.45rem 1.25rem' }}>
+                          {backupRunning ? 'Running…' : 'Run backup now'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Restore wizard */}
+                  <div className="do-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                    <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--do-text)' }}>Restore from backup</p>
+                    <div>
+                      <label className="st-field-label">Backup file</label>
+                      <FileUploadArea
+                        key={restoreFileKey}
+                        accept=".zip,.enc"
+                        onFile={f => { setRestoreFile(f); setRestoreMeta(null); setRestorePreview(null); }}
+                      />
+                    </div>
+                    {restoreFile && (
+                      <>
+                        <div>
+                          <label className="st-field-label">Decryption password (if encrypted)</label>
+                          <input
+                            type="password"
+                            className="st-input"
+                            value={restorePassword}
+                            onChange={e => setRestorePassword(e.target.value)}
+                            placeholder="Leave blank if not encrypted"
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <button className="do-btn-outline" onClick={loadRestoreMeta} disabled={restoreMetaBusy} style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}>
+                            {restoreMetaBusy ? 'Loading…' : 'Load info'}
+                          </button>
+                          <button className="do-btn-outline" onClick={loadRestorePreview} disabled={restorePreviewBusy} style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}>
+                            {restorePreviewBusy ? 'Loading…' : 'Preview'}
+                          </button>
+                          <button className="do-btn-gold" onClick={executeRestore} disabled={restoreExecuteBusy} style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}>
+                            {restoreExecuteBusy ? 'Restoring…' : 'Execute restore'}
+                          </button>
+                        </div>
+                        {restoreMeta && (
+                          <div className="st-mcp-block" style={{ fontSize: '0.75rem' }}>
+                            {JSON.stringify(restoreMeta, null, 2)}
                           </div>
                         )}
-                      </div>
-                      {!fm.loading && fm.models.length === 0 && (
-                        <p className="text-[10px] text-gray-400 mt-1">
-                          Type the model name as recognized by the provider (e.g. gpt-4o, claude-sonnet-4-20250514)
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Actions */}
-                    {(() => {
-                      const saved = savedAiFeaturesRef.current[fid];
-                      const aiFeatDirty = saved != null && (
-                        feature.provider !== saved.provider ||
-                        feature.model !== saved.model ||
-                        !!feature.api_key
-                      );
-                      return aiFeatDirty ? (
-                        <p className="text-xs text-amber-600 font-medium">⚠ Unsaved changes — click Save to apply</p>
-                      ) : null;
-                    })()}
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <Button
-                        size="sm"
-                        variant={feature.connection_tested ? 'success' : 'outline'}
-                        className={feature.connection_tested ? 'bg-green-600 text-white border-green-600 hover:bg-green-700' : ''}
-                        onClick={() => verifyAiFeature(fid)}
-                        disabled={verifying}
-                      >
-                        {verifying ? 'Testing…' : feature.connection_tested ? '✓ Connection Tested' : 'Test Connection'}
-                      </Button>
-                      <Button size="sm" onClick={() => saveAiFeature(fid)}>Save</Button>
-                      {verifyResult && !verifyResult.ok && (
-                        <span className="text-sm font-medium text-red-500">
-                          ✗ {verifyResult.error}
-                        </span>
-                      )}
-                      {!feature.connection_tested && (
-                        <span className="text-xs text-amber-600">Test connection before enabling</span>
-                      )}
-                    </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-
-          {Object.keys(aiFeatures).length === 0 && (
-            <p className="text-sm text-gray-400 italic">Loading AI features…</p>
-          )}
-
-        </section>
-
-        <section id="settings-other" className="mb-10 scroll-mt-6">
-          <h2 className="mb-1 border-b border-gray-200 pb-2 text-lg font-semibold dark:border-gray-700">Other</h2>
-          <p className="mb-6 text-xs text-gray-500 dark:text-gray-400">
-            Email notifications and lead verification — optional additions to your workflow.
-          </p>
-
-          <div className="mb-8">
-            <h3 className="mb-2 text-base font-semibold text-gray-800 dark:text-gray-100">Notifications</h3>
-            <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-              View your in-app notification history and manage email delivery preferences.
-            </p>
-            <Card className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Notification center</h4>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {notifConfig.enabled
-                    ? 'Email notifications are enabled. Click to view history and preferences.'
-                    : 'Email notifications are disabled. Click to view history and preferences.'}
-                </p>
-              </div>
-              <Button size="sm" variant="outline" onClick={() => window.location.href = '/notifications'}>
-                Open notifications
-              </Button>
-            </Card>
-          </div>
-
-          <div>
-            <h3 className="mb-2 text-base font-semibold text-gray-800 dark:text-gray-100">Email verification</h3>
-            <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-              Verify new leads automatically when they are added to a campaign.
-            </p>
-            <EmailVerificationSettings />
-          </div>
-        </section>
-          </>
-        )}
-
-        {activeTab === 'integrating' && (
-          <>
-        {/* ──────────────── API Keys ──────────────── */}
-        <section id="settings-api-keys" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-1 border-b pb-2">API Keys</h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Create keys to access the API programmatically. The full key is shown only once — copy it immediately.
-          </p>
-
-          {/* One-time key display */}
-          {createdKey && (
-            <Card className="mb-4 border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20">
-              <h3 className="text-sm font-semibold mb-1 text-green-700 dark:text-green-400">New API Key Created</h3>
-              <p className="text-xs text-gray-500 mb-2">Copy this key now — you won't be able to see it again.</p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs bg-white dark:bg-gray-800 border rounded p-2 break-all select-all">{createdKey}</code>
-                <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(createdKey); notify({ type: 'success', message: 'Copied!' }); }}>
-                  Copy
-                </Button>
-              </div>
-              <Button size="sm" variant="ghost" className="mt-2 text-xs" onClick={() => setCreatedKey(null)}>Dismiss</Button>
-            </Card>
-          )}
-
-          {/* Create key form */}
-          <Card className="mb-4">
-            <h3 className="text-sm font-semibold mb-3">Create API Key</h3>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1">
-                <label className="text-xs text-gray-500">Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. CI/CD Pipeline"
-                  className="block w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                  value={newKeyName}
-                  onChange={e => setNewKeyName(e.target.value)}
-                />
-              </div>
-              <div className="w-32">
-                <label className="text-xs text-gray-500">Expires (days)</label>
-                <input
-                  type="number"
-                  placeholder="Never"
-                  min="1"
-                  className="block w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                  value={newKeyExpiry}
-                  onChange={e => setNewKeyExpiry(e.target.value)}
-                />
-              </div>
-              <Button size="sm" onClick={createApiKey} disabled={!newKeyName.trim()}>Create</Button>
-            </div>
-          </Card>
-
-          {/* Existing keys */}
-          {apiKeys.length === 0 && (
-            <p className="text-sm text-gray-400 italic">No API keys yet.</p>
-          )}
-          {apiKeys.length > 0 && (
-            <div className="space-y-2">
-              {apiKeys.map(k => (
-                <Card key={k.id} className="flex items-center justify-between">
-                  <div>
-                    <span className="text-sm font-medium">{k.name}</span>
-                    <span className="ml-2 text-xs text-gray-400">{k.prefix}•••</span>
-                    <span className="ml-2 text-xs text-gray-400">
-                      Created {new Date(k.created_at).toLocaleDateString()}
-                      {k.expires_at && <> · Expires {new Date(k.expires_at).toLocaleDateString()}</>}
-                    </span>
-                  </div>
-                  <Button size="sm" variant="danger" onClick={() => revokeApiKey(k.id)}>Revoke</Button>
-                </Card>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* ──────────────── Webhooks ──────────────── */}
-        <section id="settings-webhooks" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-1 border-b pb-2">Webhooks</h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Register one or more outbound webhook endpoints. Each webhook can subscribe to specific event types.
-            When an event occurs every matching active webhook receives a POST request.
-          </p>
-
-          {/* New webhook form */}
-          <Card className="mb-4">
-            <h3 className="text-sm font-semibold mb-3">Add Webhook</h3>
-            <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="https://your-endpoint.example.com/hook"
-                className="block w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                value={newWh.url}
-                onChange={e => setNewWh(p => ({ ...p, url: e.target.value }))}
-              />
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Bearer secret (optional)"
-                  className="flex-1 border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                  value={newWh.secret}
-                  onChange={e => setNewWh(p => ({ ...p, secret: e.target.value }))}
-                />
-                <input
-                  type="text"
-                  placeholder="Description (optional)"
-                  className="flex-1 border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                  value={newWh.description}
-                  onChange={e => setNewWh(p => ({ ...p, description: e.target.value }))}
-                />
-              </div>
-              <EventSelector
-                events={newWh.events}
-                onChange={evts => setNewWh(p => ({ ...p, events: evts }))}
-              />
-              <Button size="sm" onClick={createWebhook}>Add Webhook</Button>
-            </div>
-          </Card>
-
-          {/* Existing webhooks */}
-          {webhooks.length === 0 && (
-            <p className="text-sm text-gray-400 italic">No webhooks configured yet.</p>
-          )}
-          {webhooks.map(wh => (
-            <Card key={wh.id} className="mb-3">
-              {editingId === wh.id ? (
-                /* editing mode */
-                <div className="space-y-3">
-                  <input
-                    type="text"
-                    className="block w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                    value={editForm.url}
-                    onChange={e => setEditForm(p => ({ ...p, url: e.target.value }))}
-                  />
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Bearer secret"
-                      className="flex-1 border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                      value={editForm.secret}
-                      onChange={e => setEditForm(p => ({ ...p, secret: e.target.value }))}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Description"
-                      className="flex-1 border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                      value={editForm.description}
-                      onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
-                    />
-                  </div>
-                  <EventSelector
-                    events={editForm.events || []}
-                    onChange={evts => setEditForm(p => ({ ...p, events: evts }))}
-                  />
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => saveEdit(wh.id)}>Save</Button>
-                    <Button size="sm" variant="outline" onClick={cancelEdit}>Cancel</Button>
-                  </div>
-                </div>
-              ) : (
-                /* display mode */
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-block w-2 h-2 rounded-full ${wh.active ? 'bg-green-500' : 'bg-gray-300'}`}
-                        title={wh.active ? 'Active' : 'Inactive'}
-                      />
-                      <span className="text-sm font-medium truncate max-w-xs" title={wh.url}>{wh.url}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => toggleActive(wh.id, wh.active)}>
-                        Enable
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => startEdit(wh)}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => testWebhook(wh.id)}>Test</Button>
-                      <Button size="sm" variant="ghost" onClick={() => { setTestEventWh(testEventWh === wh.id ? null : wh.id); setTestEventType(''); setTestEventResult(null); }}>
-                        Simulate Event
-                      </Button>
-                      <Button size="sm" variant="ghost" className="text-red-500" onClick={() => deleteWebhook(wh.id)}>Delete</Button>
-                    </div>
-                  </div>
-                  {wh.description && <p className="text-xs text-gray-500 mb-1">{wh.description}</p>}
-                  <div className="flex flex-wrap gap-1">
-                    {isAllEvents(wh.events || []) ? (
-                      <span className="text-xs bg-teal-50 text-teal-700 border border-teal-200 rounded-full px-2 py-0.5 font-medium">All Events</span>
-                    ) : (
-                      (wh.events || []).map(evt => (
-                        <span key={evt} className="text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border rounded px-1.5 py-0.5">{EVENT_LABELS[evt] || evt}</span>
-                      ))
+                        {restorePreview && (
+                          <div className="st-mcp-block" style={{ fontSize: '0.75rem' }}>
+                            {JSON.stringify(restorePreview, null, 2)}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
-                  {/* Simulate event panel */}
-                  {testEventWh === wh.id && (
-                    <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 border rounded-lg space-y-2">
-                      <p className="text-xs font-semibold text-gray-600">Simulate a specific event to see the exact payload:</p>
-                      <div className="flex items-center gap-2">
-                        <select
-                          className="border rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-300 flex-1"
-                          value={testEventType}
-                          onChange={e => { setTestEventType(e.target.value); setTestEventResult(null); }}
-                        >
-                          <option value="">— Select event type —</option>
-                          {eventTypes.map(evt => (
-                            <option key={evt} value={evt}>{EVENT_LABELS[evt] || evt}</option>
-                          ))}
-                        </select>
-                        <Button size="sm" onClick={() => testWebhookEvent(wh.id, testEventType)}>
-                          Send
-                        </Button>
-                      </div>
-                      {testEventResult && (
-                        <div className="mt-2">
-                          <p className="text-xs font-medium text-gray-500 mb-1">Payload sent:</p>
-                          <pre className="text-xs bg-white dark:bg-gray-900 border rounded p-2 overflow-auto max-h-48 font-mono">
-                            {JSON.stringify(testEventResult, null, 2)}
-                          </pre>
+                </section>
+              )}
+            </>
+          )}
+
+          {/* ── FEATURES ── */}
+          {activeTab === 'features' && (
+            <>
+              <section className="st-section" id="settings-campaign-modes">
+                <h2 className="st-section-title">Campaign Modes</h2>
+                <CampaignModeCodes />
+              </section>
+
+              <section className="st-section" id="settings-other">
+                <h2 className="st-section-title">Other</h2>
+                <div className="do-card" style={{ padding: '1rem' }}>
+                  <a href="/notifications" style={{ fontSize: '0.85rem', color: 'var(--do-gold-dark)', textDecoration: 'none', fontWeight: 600 }}>
+                    Notification settings →
+                  </a>
+                </div>
+              </section>
+            </>
+          )}
+
+          {/* ── INTEGRATING ── */}
+          {activeTab === 'integrating' && (
+            <>
+              {/* API Keys */}
+              <section className="st-section" id="settings-api-keys">
+                <h2 className="st-section-title">API Keys</h2>
+                <div className="do-card" style={{ padding: '1rem' }}>
+                  <form onSubmit={createApiKey} style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', marginBottom: '1rem', alignItems: 'flex-end' }}>
+                    <div>
+                      <label className="st-field-label">Key name</label>
+                      <input
+                        className="st-input"
+                        style={{ maxWidth: '14rem' }}
+                        value={newKeyName}
+                        onChange={e => setNewKeyName(e.target.value)}
+                        placeholder="My integration"
+                      />
+                    </div>
+                    <div>
+                      <label className="st-field-label">Expires (optional)</label>
+                      <input
+                        type="date"
+                        className="st-input"
+                        style={{ maxWidth: '10rem' }}
+                        value={newKeyExpiry}
+                        onChange={e => setNewKeyExpiry(e.target.value)}
+                      />
+                    </div>
+                    <button type="submit" className="do-btn-gold" style={{ fontSize: '0.82rem', padding: '0.45rem 1.25rem', alignSelf: 'flex-end' }}>
+                      Create key
+                    </button>
+                  </form>
+
+                  {createdKey && (
+                    <div style={{ padding: '0.75rem', borderRadius: '0.4rem', background: 'var(--do-gold-bg)', border: '1px solid var(--do-gold)', marginBottom: '1rem' }}>
+                      <p style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--do-gold-dark)', marginBottom: '0.35rem' }}>Key created — copy it now, it won't be shown again:</p>
+                      <code className="st-input-mono" style={{ display: 'block', fontSize: '0.78rem', wordBreak: 'break-all', color: 'var(--do-text)' }}>{createdKey.key}</code>
+                    </div>
+                  )}
+
+                  <div>
+                    {apiKeys.map(k => (
+                      <div key={k.id} className="st-apikey-row">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--do-text)' }}>{k.name}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--do-text-muted)', fontFamily: 'ui-monospace, Consolas, monospace' }}>
+                            {k.key_prefix}… · Created {new Date(k.created_at).toLocaleDateString()}
+                            {k.expires_at && ` · Expires ${new Date(k.expires_at).toLocaleDateString()}`}
+                          </div>
                         </div>
-                      )}
+                        <button
+                          className="do-btn-outline"
+                          onClick={() => revokeApiKey(k.id)}
+                          style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem', color: 'var(--danger)', borderColor: 'var(--danger-line)', flexShrink: 0 }}
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    ))}
+                    {apiKeys.length === 0 && (
+                      <p style={{ fontSize: '0.82rem', color: 'var(--do-text-muted)', textAlign: 'center', padding: '1rem 0' }}>No API keys yet.</p>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* Webhooks */}
+              <section className="st-section" id="settings-webhooks">
+                <h2 className="st-section-title">Webhooks</h2>
+
+                {/* Create form */}
+                <form onSubmit={createWebhook} className="do-card" style={{ padding: '1rem', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--do-text)' }}>New webhook</p>
+                  <div>
+                    <label className="st-field-label">URL</label>
+                    <input
+                      className="st-input st-input-mono"
+                      value={newWh.url}
+                      onChange={e => setNewWh(w => ({ ...w, url: e.target.value }))}
+                      placeholder="https://your-server.com/webhook"
+                    />
+                  </div>
+                  <div>
+                    <label className="st-field-label">Description</label>
+                    <input
+                      className="st-input"
+                      value={newWh.description}
+                      onChange={e => setNewWh(w => ({ ...w, description: e.target.value }))}
+                      placeholder="What this webhook is for"
+                    />
+                  </div>
+                  <div>
+                    <label className="st-field-label" style={{ marginBottom: '0.5rem' }}>Events</label>
+                    <EventSelector value={newWh.events} onChange={evts => setNewWh(w => ({ ...w, events: evts }))} />
+                  </div>
+                  <div>
+                    <button type="submit" className="do-btn-gold" style={{ fontSize: '0.82rem', padding: '0.45rem 1.25rem' }}>
+                      Add webhook
+                    </button>
+                  </div>
+                </form>
+
+                {/* Webhook list */}
+                {webhooks.map(wh => (
+                  <div key={wh.id} className="st-wh-row">
+                    {editingId === wh.id ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                        <div>
+                          <label className="st-field-label">URL</label>
+                          <input className="st-input st-input-mono" value={editForm.url || ''} onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="st-field-label">Description</label>
+                          <input className="st-input" value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="st-field-label" style={{ marginBottom: '0.4rem' }}>Events</label>
+                          <EventSelector value={editForm.events || []} onChange={evts => setEditForm(f => ({ ...f, events: evts }))} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button className="do-btn-gold" onClick={() => saveWebhook(wh.id)} style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}>Save</button>
+                          <button className="do-btn-outline" onClick={() => setEditingId(null)} style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '0.8rem', color: 'var(--do-text)', wordBreak: 'break-all', marginBottom: '0.2rem' }}>{wh.url}</div>
+                          {wh.description && <div style={{ fontSize: '0.75rem', color: 'var(--do-text-muted)', marginBottom: '0.2rem' }}>{wh.description}</div>}
+                          <div style={{ fontSize: '0.72rem', color: 'var(--do-text-muted)' }}>
+                            {(wh.events?.length === 0 || !wh.events) ? 'All events' : wh.events.join(', ')}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                          <button className="do-btn-outline" onClick={() => { setEditingId(wh.id); setEditForm({ url: wh.url, description: wh.description, events: wh.events || [] }); }} style={{ fontSize: '0.75rem', padding: '0.3rem 0.65rem' }}>Edit</button>
+                          <button className="do-btn-outline" onClick={() => deleteWebhook(wh.id)} style={{ fontSize: '0.75rem', padding: '0.3rem 0.65rem', color: 'var(--danger)', borderColor: 'var(--danger-line)' }}>Delete</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Simulate event */}
+                {webhooks.length > 0 && (
+                  <div className="do-card" style={{ padding: '1rem', marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--do-text)' }}>Simulate event</p>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                      <div>
+                        <label className="st-field-label">Webhook</label>
+                        <select className="st-input" style={{ maxWidth: '16rem' }} value={testEventWh} onChange={e => setTestEventWh(e.target.value)}>
+                          <option value="">Select webhook…</option>
+                          {webhooks.map(w => <option key={w.id} value={w.id}>{w.url}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="st-field-label">Event type</label>
+                        <select className="st-input" style={{ maxWidth: '14rem' }} value={testEventType} onChange={e => setTestEventType(e.target.value)}>
+                          <option value="">Select event…</option>
+                          {eventTypes.map(e => <option key={e} value={e}>{e}</option>)}
+                        </select>
+                      </div>
+                      <button className="do-btn-outline" onClick={testWebhookEvent} disabled={!testEventWh || !testEventType} style={{ fontSize: '0.8rem', padding: '0.4rem 1rem', alignSelf: 'flex-end' }}>
+                        Send test
+                      </button>
+                    </div>
+                    {testEventResult && (
+                      <div className="st-mcp-block" style={{ fontSize: '0.75rem' }}>
+                        {JSON.stringify(testEventResult, null, 2)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              {/* MCP */}
+              <section className="st-section" id="settings-mcp">
+                <h2 className="st-section-title">MCP</h2>
+                <div className="do-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {mcpEndpoint && (
+                    <div>
+                      <label className="st-field-label">MCP Endpoint</label>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <code className="st-mcp-block" style={{ flex: 1, minWidth: 0, padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}>{mcpEndpoint}</code>
+                        <button className="do-btn-outline" style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem', flexShrink: 0 }} onClick={() => navigator.clipboard.writeText(mcpEndpoint).catch(() => {})}>
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {mcpTools.length > 0 && (
+                    <div>
+                      <label className="st-field-label" style={{ marginBottom: '0.4rem' }}>Available tools</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                        {mcpTools.map(t => (
+                          <span key={t} className="st-pill st-pill-gold">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {mcpCursorFragment && (
+                    <div>
+                      <label className="st-field-label" style={{ marginBottom: '0.4rem' }}>Cursor MCP config snippet</label>
+                      <div style={{ position: 'relative' }}>
+                        <pre className="st-mcp-block">{mcpCursorFragment}</pre>
+                        <button
+                          className="do-btn-outline"
+                          style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', fontSize: '0.72rem', padding: '0.25rem 0.6rem' }}
+                          onClick={() => navigator.clipboard.writeText(mcpCursorFragment).catch(() => {})}
+                        >
+                          Copy
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
-              )}
-            </Card>
-          ))}
-        </section>
+              </section>
+            </>
+          )}
 
-        {/* ──────────────── MCP (AI agents) ──────────────── */}
-        <section id="settings-mcp" className="mb-10 scroll-mt-6">
-          <h2 className="text-lg font-semibold mb-1 border-b pb-2">MCP (AI agents)</h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Emissary exposes a remote MCP endpoint over HTTPS. Create an API key under API keys, then point Cursor at it with
-            <code className="mx-1 text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">npx mcp-remote</code>
-            (Node 18+). No Python install on your machine.
-          </p>
-          <Card className="mb-4 space-y-3">
-            <h3 className="text-sm font-semibold">1. Endpoint</h3>
-            <p className="text-xs text-gray-500">
-              Streamable HTTP MCP URL (same auth as the REST API):
-            </p>
-            {mcpSetup?.mcp_http_url ? (
-              <code className="block text-xs bg-gray-50 dark:bg-gray-800 border rounded-lg p-2 break-all font-mono">{mcpSetup.mcp_http_url}</code>
-            ) : (
-              <p className="text-xs text-amber-600">Could not load — use <code className="font-mono">{typeof window !== 'undefined' ? `${window.location.origin}/api/mcp` : '/api/mcp'}</code></p>
-            )}
-            <p className="text-xs text-gray-500">
-              For plain HTTP (local dev only), add
-              <code className="mx-1 text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">--allow-http</code>
-              to the <code className="text-[10px] font-mono">mcp-remote</code> args after the URL.
-            </p>
-            <h3 className="text-sm font-semibold pt-2">2. Tools exposed to the agent</h3>
-            <ul className="text-sm text-gray-600 dark:text-gray-400 list-disc pl-5 space-y-1">
-              <li><code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">list_leads</code> — search / filter (q, status, bad_only, interest; stack)</li>
-              <li><code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">get_lead</code> — one lead by id</li>
-              <li><code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">update_lead</code> — patch name, status, custom_data</li>
-              <li><code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">delete_lead</code> — remove a lead</li>
-              <li><code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">add_campaign_leads</code> — bulk add to a campaign</li>
-            </ul>
-            <h3 className="text-sm font-semibold pt-2">3. Cursor MCP config</h3>
-            <p className="text-xs text-gray-500">
-              Merge the JSON into your MCP settings. Replace
-              <code className="mx-1 text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">Reach_MCP_API_KEY</code>
-              with a key from the API keys section. To use a JWT instead, use
-              <code className="mx-1 text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">--header</code>
-              <code className="text-[10px] font-mono">{'Authorization:${Reach_MCP_AUTH}'}</code>
-              {' '}and set the env value to <code className="text-[10px] font-mono">Bearer …</code>
-              (same as REST). App base URL:
-              {mcpSetup?.api_base_url ? (
-                <span className="ml-1 font-mono text-[11px]">{mcpSetup.api_base_url}</span>
-              ) : (
-                <span className="ml-1 text-amber-600">(load failed)</span>
-              )}
-            </p>
-            {mcpSetup?.cursor_mcp_fragment && (
-              <div className="space-y-2">
-                <pre className="text-xs bg-gray-50 dark:bg-gray-800 border rounded-lg p-3 overflow-x-auto font-mono max-h-64">
-                  {JSON.stringify(mcpSetup.cursor_mcp_fragment, null, 2)}
-                </pre>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    navigator.clipboard.writeText(JSON.stringify(mcpSetup.cursor_mcp_fragment, null, 2));
-                    notify({ type: 'success', message: 'MCP fragment copied — merge into your mcp.json' });
-                  }}
-                >
-                  Copy MCP fragment
-                </Button>
+          {/* ── DEV ── */}
+          {activeTab === 'dev' && (
+            <section className="st-section" id="settings-test-mode">
+              <h2 className="st-section-title">Test Mode</h2>
+              <div className="do-card" style={{ padding: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--do-text)', marginBottom: '0.25rem' }}>Enable test mode</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--do-text-muted)' }}>
+                      In test mode, emails are not delivered to real recipients. Use this for development and integration testing.
+                    </div>
+                  </div>
+                  <button
+                    className={`toggle${testMode ? ' on' : ''}`}
+                    onClick={async () => {
+                      const next = !testMode;
+                      setTestMode(next);
+                      try { await api.post('/settings/test-mode', { enabled: next }); }
+                      catch (err) { setTestMode(!next); notify({ type: 'error', message: err.message }); }
+                    }}
+                  >
+                      </button>
+                </div>
               </div>
-            )}
-          </Card>
-        </section>
-          </>
-        )}
+            </section>
+          )}
 
-        {activeTab === 'dev' && !isProduction && (
-          <section id="settings-test-mode" className="mb-10 scroll-mt-6">
-            <h2 className="text-lg font-semibold mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">Test mode</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-              When enabled emails are simulated — no real messages are sent.
-            </p>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={testMode} onChange={e => submitTestMode(e.target.checked)} />
-              <span className="text-sm">Enabled</span>
-            </label>
-          </section>
-        )}
+          {/* ── BILLING ── */}
+          {activeTab === 'billing' && (
+            <section className="st-section" id="settings-billing-plan">
+              <BillingTab />
+            </section>
+          )}
+
         </div>
       </div>
 
-      {/* ──────────────── Known IPs Dialog ──────────────── */}
+      {/* Known IPs Dialog */}
       {knownIpsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-2xl mx-4 p-6 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Known IPs</h2>
-              <button
-                onClick={() => setKnownIpsOpen(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none"
-              >✕</button>
+        <div className="st-dialog-overlay" onClick={e => { if (e.target === e.currentTarget) setKnownIpsOpen(false); }}>
+          <div className="st-dialog">
+            <div style={{ padding: '1.25rem 1.25rem 0', borderBottom: '1px solid var(--do-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '0.75rem' }}>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 700, color: 'var(--do-text)', margin: 0 }}>Known IPs</h3>
+              <button onClick={() => setKnownIpsOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--do-text-muted)', lineHeight: 1 }}>×</button>
             </div>
-            <p className="text-xs text-gray-500 mb-4">
-              Opens and clicks from these IPs are ignored (self-open filtering). IPs from your browser sessions are collected automatically and expire after one week. You can also add permanent IPs manually.
-            </p>
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <p style={{ fontSize: '0.78rem', color: 'var(--do-text-muted)', margin: 0 }}>
+                Your current IP: <code style={{ fontFamily: 'ui-monospace, Consolas, monospace', background: 'var(--do-cream)', padding: '0 0.3rem', borderRadius: '0.2rem' }}>{currentIp}</code>
+              </p>
 
-            {/* Add new IP */}
-            <div className="flex gap-2 mb-4">
-              <input
-                type="text"
-                placeholder="e.g. 203.0.113.5"
-                value={newIpAddress}
-                onChange={e => setNewIpAddress(e.target.value)}
-                className="flex-1 border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-600"
-              />
-              <Button size="sm" onClick={async () => {
-                const ip = newIpAddress.trim();
-                if (!ip) return;
-                try {
-                  await api.post('/settings/known-ips', { ip_address: ip, permanent: true });
-                  setNewIpAddress('');
-                  const d = await api.get('/settings/known-ips');
-                  setKnownIps(d.known_ips || []);
-                  notify('IP added', 'success');
-                } catch (e) { notify(e.message, 'error'); }
-              }}>Add Permanent</Button>
-            </div>
-
-            {/* IP list */}
-            <div className="overflow-y-auto flex-1">
-              {knownIps.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">No known IPs yet. Your browser IP will be registered automatically.</p>
-              ) : (
-                <table className="w-full text-sm">
+              {knownIps.length > 0 ? (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                   <thead>
-                    <tr className="text-left text-xs text-gray-500 border-b">
-                      <th className="pb-1">IP Address</th>
-                      <th className="pb-1">Type</th>
-                      <th className="pb-1">Last Seen</th>
-                      <th className="pb-1">Expires</th>
-                      <th className="pb-1"></th>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '0.35rem 0.5rem', fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--do-text-muted)', borderBottom: '1px solid var(--do-border)' }}>IP Address</th>
+                      <th style={{ textAlign: 'left', padding: '0.35rem 0.5rem', fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--do-text-muted)', borderBottom: '1px solid var(--do-border)' }}>Added</th>
+                      <th style={{ borderBottom: '1px solid var(--do-border)' }} />
                     </tr>
                   </thead>
                   <tbody>
                     {knownIps.map(ip => (
-                      <tr key={ip.id} className={`border-b ${ip.is_current ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                        <td className="py-1.5">
-                          {ip.ip_address}
-                          {ip.is_current && <span className="ml-2 text-xs text-blue-600 dark:text-blue-400 font-medium">(you)</span>}
-                        </td>
-                        <td className="py-1.5">
-                          {ip.permanent
-                            ? <span className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-1.5 py-0.5 rounded">permanent</span>
-                            : <span className="text-xs bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 px-1.5 py-0.5 rounded">auto</span>
-                          }
-                        </td>
-                        <td className="py-1.5 text-gray-500">{ip.last_seen_at ? new Date(ip.last_seen_at).toLocaleDateString() : '—'}</td>
-                        <td className="py-1.5 text-gray-500">{ip.expires_at ? new Date(ip.expires_at).toLocaleDateString() : '—'}</td>
-                        <td className="py-1.5 text-right">
+                      <tr key={ip.ip || ip}>
+                        <td style={{ padding: '0.4rem 0.5rem', fontFamily: 'ui-monospace, Consolas, monospace', color: 'var(--do-text)', borderBottom: '1px solid var(--do-border)' }}>{ip.ip || ip}</td>
+                        <td style={{ padding: '0.4rem 0.5rem', color: 'var(--do-text-muted)', borderBottom: '1px solid var(--do-border)' }}>{ip.created_at ? new Date(ip.created_at).toLocaleDateString() : '—'}</td>
+                        <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', borderBottom: '1px solid var(--do-border)' }}>
                           <button
-                            className="text-xs text-red-500 hover:underline"
-                            onClick={async () => {
-                              try {
-                                await api.del(`/settings/known-ips/${ip.id}`);
-                                const d = await api.get('/settings/known-ips');
-                                setKnownIps(d.known_ips || []);
-                                notify('IP removed', 'success');
-                              } catch (e) { notify(e.message, 'error'); }
-                            }}
-                          >Remove</button>
+                            className="do-btn-outline"
+                            onClick={() => removeKnownIp(ip.ip || ip)}
+                            style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', color: 'var(--danger)', borderColor: 'var(--danger-line)' }}
+                          >
+                            Remove
+                          </button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              ) : (
+                <p style={{ fontSize: '0.82rem', color: 'var(--do-text-muted)', textAlign: 'center' }}>No known IPs. All IPs are allowed.</p>
               )}
+
+              <form onSubmit={addKnownIp} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <label className="st-field-label">Add IP address</label>
+                  <input
+                    className="st-input st-input-mono"
+                    style={{ maxWidth: '100%' }}
+                    value={newIpAddress}
+                    onChange={e => setNewIpAddress(e.target.value)}
+                    placeholder="192.168.1.1"
+                  />
+                </div>
+                <button type="submit" className="do-btn-gold" style={{ fontSize: '0.82rem', padding: '0.45rem 1.25rem', alignSelf: 'flex-end', flexShrink: 0 }}>
+                  Add
+                </button>
+              </form>
             </div>
           </div>
         </div>

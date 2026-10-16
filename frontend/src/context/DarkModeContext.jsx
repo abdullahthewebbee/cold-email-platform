@@ -1,10 +1,9 @@
 import { createContext, useState, useEffect, useContext, useCallback } from 'react';
-import { enable, disable } from 'darkreader';
 
 const STORAGE_KEY = 'darkreader';
 
-// central configuration for dark mode appearance
-const DARKREADER_SETTINGS = { brightness: 150, contrast: 100, sepia: 0 };
+// InboxAir: light and dark are both native token themes (styles/inboxair-theme.css),
+// so Dark Reader is no longer used. The theme is applied as data-theme + .dark on <html>.
 
 /** @returns {'system' | 'dark' | 'light'} */
 function readDarkThemePreference() {
@@ -12,9 +11,9 @@ function readDarkThemePreference() {
     const s = localStorage.getItem(STORAGE_KEY);
     if (s === 'on' || s === 'dark') return 'dark';
     if (s === 'off' || s === 'light') return 'light';
-    return 'system';
+    return 'dark';   // InboxAir: dark is the default theme
   } catch {
-    return 'system';
+    return 'dark';
   }
 }
 
@@ -45,16 +44,11 @@ export function DarkModeProvider({ children }) {
     const root = document.documentElement;
     if (on) root.classList.add('dark');
     else root.classList.remove('dark');
+    root.setAttribute('data-theme', on ? 'dark' : 'light');
   };
 
   const applyEffectiveDark = useCallback(on => {
-    if (on) {
-      enable(DARKREADER_SETTINGS);
-      applyRootClass(true);
-    } else {
-      disable();
-      applyRootClass(false);
-    }
+    applyRootClass(on);
     setDarkMode(on);
   }, []);
 

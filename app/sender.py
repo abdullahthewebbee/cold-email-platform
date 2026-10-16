@@ -50,6 +50,7 @@ class SendFailure:
     """
     error_type: str   # "bounce", "invalid_recipient", "permission_denied", "auth_failed"
     message: str
+    bounce_type: str | None = None   # "hard", "soft", "block", "content" — set for bounce/invalid_recipient failures
 
     def __bool__(self):
         return False
@@ -545,9 +546,12 @@ def _send_via_gmail(
         if status_code == 400:
             # Bad request: typically invalid recipient, malformed message, or
             # the message was rejected by Gmail (e.g. classified as spam).
+            from app.bounce_classifier import classify_bounce
+            _msg = f"Gmail rejected the message (400): {err_body[:300]}"
             return SendFailure(
                 error_type="bounce",
-                message=f"Gmail rejected the message (400): {err_body[:300]}",
+                message=_msg,
+                bounce_type=classify_bounce(_msg),
             )
         if status_code in (401, 403):
             if retry_on_auth_fail and gmail_account and gmail_account.refresh_token:
@@ -623,6 +627,11 @@ def send_email(
     office365_tenant_id: str = "",
     conversation_id: Optional[str] = None,
     reply_graph_message_id: Optional[str] = None,
+    smtp_host: str = "",
+    smtp_port: Optional[int] = None,
+    smtp_username: str = "",
+    smtp_password: str = "",
+    smtp_encryption: str = "starttls",
 ) -> Optional[SendResult | SendFailure]:
     """Send one email via Gmail API or Microsoft Graph API.
 
@@ -736,7 +745,6 @@ def _log_office365_call(
     except OSError:
         log.warning("Could not write to office365 log file at %s", _O365_LOG_PATH)
 
-
 def _send_via_office365(
     to_email: str,
     subject: str,
@@ -753,6 +761,11 @@ def _send_via_office365(
     office365_client_secret: str = "",
     office365_tenant_id: str = "",
     reply_graph_message_id: Optional[str] = None,
+    smtp_host: str = "",
+    smtp_port: Optional[int] = None,
+    smtp_username: str = "",
+    smtp_password: str = "",
+    smtp_encryption: str = "starttls",
     retry_on_auth_fail: bool = True,
 ) -> Optional[SendResult | SendFailure]:
     """Send one email via Microsoft Graph API using raw MIME format.
@@ -915,9 +928,12 @@ def _send_via_office365(
         log.error("Office 365 Graph API error %s: %s", status_code, err_body[:300])
 
         if status_code == 400:
+            from app.bounce_classifier import classify_bounce
+            _msg = f"Microsoft rejected the message (400): {err_body[:300]}"
             return SendFailure(
                 error_type="bounce",
-                message=f"Microsoft rejected the message (400): {err_body[:300]}",
+                message=_msg,
+                bounce_type=classify_bounce(_msg),
             )
         if status_code in (401, 403):
             if retry_on_auth_fail and office365_account.refresh_token:

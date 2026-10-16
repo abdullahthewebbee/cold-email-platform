@@ -41,7 +41,7 @@ async def test_list_webhook_events_returns_all_types():
 
 @pytest.mark.asyncio
 async def test_list_webhooks_empty(session):
-    result = await list_webhooks(db=session)
+    result = await list_webhooks(db=session, org_id=None)
 
     assert result == []
 
@@ -52,7 +52,7 @@ async def test_list_webhooks_returns_existing(session):
     session.add(wh)
     await session.flush()
 
-    result = await list_webhooks(db=session)
+    result = await list_webhooks(db=session, org_id=None)
 
     assert len(result) == 1
     assert result[0].url == "https://example.com/hook"
@@ -64,7 +64,7 @@ async def test_list_webhooks_returns_multiple(session):
         session.add(Webhook(url=f"https://example.com/hook{i}", events=[], active=True))
     await session.flush()
 
-    result = await list_webhooks(db=session)
+    result = await list_webhooks(db=session, org_id=None)
 
     assert len(result) == 3
 
@@ -84,7 +84,7 @@ async def test_create_webhook_persists_to_db(session):
         description="My webhook",
     )
 
-    wh = await create_webhook(payload=payload, db=session)
+    wh = await create_webhook(payload=payload, db=session, org_id=None)
 
     assert wh.id is not None
     assert wh.url == "https://hook.example.com/"
@@ -98,7 +98,7 @@ async def test_create_webhook_persists_to_db(session):
 async def test_create_webhook_trims_url_whitespace(session):
     payload = WebhookCreate(url="  https://example.com/hook  ", events=[])
 
-    wh = await create_webhook(payload=payload, db=session)
+    wh = await create_webhook(payload=payload, db=session, org_id=None)
 
     assert wh.url == "https://example.com/hook"
 
@@ -108,7 +108,7 @@ async def test_create_webhook_invalid_event_type_raises_400(session):
     payload = WebhookCreate(url="https://example.com/hook", events=["not.a.real.event"])
 
     with pytest.raises(HTTPException) as exc_info:
-        await create_webhook(payload=payload, db=session)
+        await create_webhook(payload=payload, db=session, org_id=None)
 
     assert exc_info.value.status_code == 400
 
@@ -118,7 +118,7 @@ async def test_create_webhook_empty_events_allowed(session):
     """An empty events list (= subscribe to all) must be accepted."""
     payload = WebhookCreate(url="https://example.com/hook", events=[])
 
-    wh = await create_webhook(payload=payload, db=session)
+    wh = await create_webhook(payload=payload, db=session, org_id=None)
 
     assert wh.events == []
 
@@ -128,7 +128,7 @@ async def test_create_webhook_all_event_types_valid(session):
     """Subscribing to every known event type must not raise."""
     payload = WebhookCreate(url="https://example.com/hook", events=list(WEBHOOK_EVENT_TYPES))
 
-    wh = await create_webhook(payload=payload, db=session)
+    wh = await create_webhook(payload=payload, db=session, org_id=None)
 
     assert set(wh.events) == set(WEBHOOK_EVENT_TYPES)
 
@@ -148,6 +148,7 @@ async def test_update_webhook_changes_url(session):
         webhook_id=wh.id,
         payload=WebhookUpdate(url="https://new.example.com/hook"),
         db=session,
+        org_id=None,
     )
 
     assert updated.url == "https://new.example.com/hook"
@@ -163,6 +164,7 @@ async def test_update_webhook_changes_active_flag(session):
         webhook_id=wh.id,
         payload=WebhookUpdate(active=False),
         db=session,
+        org_id=None,
     )
 
     assert updated.active is False
@@ -178,6 +180,7 @@ async def test_update_webhook_changes_events(session):
         webhook_id=wh.id,
         payload=WebhookUpdate(events=["email.opened", "lead.replied"]),
         db=session,
+        org_id=None,
     )
 
     assert set(updated.events) == {"email.opened", "lead.replied"}
@@ -193,6 +196,7 @@ async def test_update_webhook_partial_only_changes_given_fields(session):
         webhook_id=wh.id,
         payload=WebhookUpdate(secret="new-secret"),  # only secret
         db=session,
+        org_id=None,
     )
 
     assert updated.secret == "new-secret"
@@ -210,6 +214,7 @@ async def test_update_webhook_invalid_event_raises_400(session):
             webhook_id=wh.id,
             payload=WebhookUpdate(events=["bogus.event"]),
             db=session,
+        org_id=None,
         )
 
     assert exc_info.value.status_code == 400
@@ -222,6 +227,7 @@ async def test_update_webhook_not_found_raises_404(session):
             webhook_id=99999,
             payload=WebhookUpdate(active=False),
             db=session,
+        org_id=None,
         )
 
     assert exc_info.value.status_code == 404
@@ -239,7 +245,7 @@ async def test_delete_webhook_removes_from_db(session):
     await session.flush()
     wh_id = wh.id
 
-    result = await delete_webhook(webhook_id=wh_id, db=session)
+    result = await delete_webhook(webhook_id=wh_id, db=session, org_id=None)
 
     assert result == {"ok": True}
 
@@ -250,7 +256,7 @@ async def test_delete_webhook_removes_from_db(session):
 @pytest.mark.asyncio
 async def test_delete_webhook_not_found_raises_404(session):
     with pytest.raises(HTTPException) as exc_info:
-        await delete_webhook(webhook_id=99999, db=session)
+        await delete_webhook(webhook_id=99999, db=session, org_id=None)
 
     assert exc_info.value.status_code == 404
 
@@ -263,7 +269,7 @@ async def test_delete_webhook_does_not_affect_others(session):
     session.add(wh2)
     await session.flush()
 
-    await delete_webhook(webhook_id=wh1.id, db=session)
+    await delete_webhook(webhook_id=wh1.id, db=session, org_id=None)
 
     remaining = await session.execute(select(func.count(Webhook.id)))
     assert remaining.scalar() == 1

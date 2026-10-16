@@ -1,4 +1,4 @@
-"""Pydantic schemas for API and validation."""
+﻿"""Pydantic schemas for API and validation."""
 from pydantic import AliasChoices, BaseModel, EmailStr, Field
 from typing import Optional, Dict, Any, List
 from datetime import datetime, time
@@ -95,7 +95,12 @@ class InboxCreate(BaseModel):
     max_emails_per_day: int = 50
     wait_minutes_between: int = 5
     max_jitter_seconds: int = 180
-    provider: str = "gmail"  # gmail | office365
+    provider: str = "gmail"  # gmail | office365 | smtp
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_encryption: Optional[str] = "starttls"
     tracking_domain: Optional[str] = None  # custom hostname for tracking links
     ramp_up_enabled: bool = False
     ramp_up_period_days: int = 42
@@ -109,6 +114,11 @@ class InboxUpdate(BaseModel):
     wait_minutes_between: Optional[int] = None
     max_jitter_seconds: Optional[int] = None
     provider: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_encryption: Optional[str] = None
     tracking_domain: Optional[str] = None  # set to "" to clear
     ramp_up_enabled: Optional[bool] = None
     ramp_up_period_days: Optional[int] = None
@@ -124,7 +134,7 @@ class BeaconConnectRequest(BaseModel):
 
 
 class BeaconConnectFromInboxRequest(BaseModel):
-    """Reuse another inbox’s Beacon base URL and setup token (one-click)."""
+    """Reuse another inboxâ€™s Beacon base URL and setup token (one-click)."""
 
     source_inbox_id: int = Field(..., ge=1)
 
@@ -143,6 +153,10 @@ class InboxResponse(BaseModel):
     wait_minutes_between: int
     max_jitter_seconds: int = 180
     provider: str
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = None
+    smtp_encryption: Optional[str] = None
     tracking_domain: Optional[str] = None
     beacon_connected: bool = False
     beacon_base_url: Optional[str] = None
@@ -229,7 +243,7 @@ class SequenceCreate(BaseModel):
     sequence_type: str = "standard"  # standard | personalized
     fallback_subject: Optional[str] = None
     fallback_body: Optional[str] = None
-
+    custom_id: Optional[str] = None
 
 class SequenceUpdate(BaseModel):
     subject: Optional[str] = None
@@ -240,6 +254,7 @@ class SequenceUpdate(BaseModel):
     sequence_type: Optional[str] = None
     fallback_subject: Optional[str] = None
     fallback_body: Optional[str] = None
+    custom_id: Optional[str] = None
 
 
 class SequenceResponse(BaseModel):
@@ -254,6 +269,7 @@ class SequenceResponse(BaseModel):
     sequence_type: str = "standard"
     fallback_subject: Optional[str] = None
     fallback_body: Optional[str] = None
+    custom_id: Optional[str] = None
     variants: List["SequenceVariantResponse"] = []
 
 
@@ -285,11 +301,13 @@ class CampaignCreate(BaseModel):
     send_all_as_text: bool = False
     # Timezone (IANA name e.g. "America/New_York"); None = user's local timezone
     timezone: Optional[str] = None
-    # When True, prefer inboxes matching the lead's email provider (Google → Gmail, O365 → Office 365)
+    # When True, prefer inboxes matching the lead's email provider (Google â†’ Gmail, O365 â†’ Office 365)
     match_lead_provider: bool = True
     # wait_for_all (default) = don't send until all personalized emails are written
     # asap = start sending each personalized email as soon as it's written
     custom_sequence_mode: str = "wait_for_all"
+    campaign_mode: str = "manual"  # manual | semi_manual | full_ai
+    campaign_code: Optional[str] = None
 
 
 class CampaignUpdate(BaseModel):
@@ -309,6 +327,9 @@ class CampaignUpdate(BaseModel):
     timezone: Optional[str] = None
     match_lead_provider: Optional[bool] = None
     custom_sequence_mode: Optional[str] = None
+    campaign_mode: Optional[str] = None
+    campaign_code: Optional[str] = None
+    complaint_rate_threshold: Optional[float] = None
 
 
 class CampaignStats(BaseModel):
@@ -328,7 +349,7 @@ class CampaignStats(BaseModel):
     after a reply even though no further messages will be sent.
 
     ``needs_custom_email`` counts leads in the ``needs_custom_email``
-    enrollment status — enrolled but waiting for custom content on
+    enrollment status â€” enrolled but waiting for custom content on
     personalized sequences.
     """
     total_leads: int = 0
@@ -357,6 +378,8 @@ class CampaignResponse(BaseModel):
     sending_hours_start: str
     sending_hours_end: str
     stop_on_reply: bool
+    campaign_mode: str = "manual"
+    campaign_code: Optional[str] = None
     paused: bool
     priority: int
     track_opens: bool = False
@@ -367,6 +390,7 @@ class CampaignResponse(BaseModel):
     timezone: Optional[str] = None
     match_lead_provider: bool = True
     custom_sequence_mode: str = "wait_for_all"
+    complaint_rate_threshold: Optional[float] = None
     created_at: datetime
 
     # new stats object; the frontend can always rely on ``stats`` being

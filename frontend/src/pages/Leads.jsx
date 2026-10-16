@@ -1,25 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
-import { Button } from '../components/ui/Button';
 import { FileUploadArea } from '../components/ui/FileUploadArea';
-import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { useNotify } from '../context/NotificationContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useLoading } from '../context/LoadingContext';
 import { cn } from '../utils/cn';
+import { useSubscription } from '../hooks/useSubscription';
+import Icon from '../components/ui/AegisIcon';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All statuses' },
-  { value: 'active', label: 'Enrollment: active' },
-  { value: 'contacted', label: 'Enrollment: contacted' },
-  { value: 'completed', label: 'Enrollment: completed' },
-  { value: 'bounced', label: 'Enrollment: bounced' },
-  { value: 'unsubscribed', label: 'Enrollment: unsubscribed' },
-  { value: 'wrong_person', label: 'Enrollment: wrong_person' },
-  { value: 'invalid', label: 'Verify: invalid' },
-  { value: 'replied', label: 'Has reply' },
+  { value: 'active', label: 'Active' },
+  { value: 'contacted', label: 'Contacted' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'bounced', label: 'Bounced' },
+  { value: 'unsubscribed', label: 'Unsubscribed' },
+  { value: 'wrong_person', label: 'Wrong person' },
+  { value: 'invalid', label: 'Invalid' },
+  { value: 'replied', label: 'Replied' },
 ];
 
 const INTEREST_FILTER_OPTIONS = [
@@ -46,25 +46,18 @@ function statusPillClass(status) {
   switch (status) {
     case 'active':
     case 'contacted':
-      return 'bg-green-100 text-green-800';
+      return 'do-pill do-pill-green';
     case 'completed':
-      return 'bg-blue-100 text-blue-800';
+      return 'do-pill do-pill-blue';
     case 'unsubscribed':
     case 'wrong_person':
-      return 'bg-gray-200 text-gray-700';
+      return 'do-pill do-pill-gray';
     case 'bounced':
     case 'invalid':
-      return 'bg-red-100 text-red-800';
+      return 'do-pill do-pill-red';
     default:
-      return 'bg-gray-100 text-gray-700';
+      return 'do-pill do-pill-gray';
   }
-}
-
-function leadRowSummary(lead) {
-  const camps = lead.campaigns || [];
-  if (!camps.length) return '—';
-  const bits = camps.map((c) => `${c.campaign_name?.slice(0, 12) || c.campaign_id}:${c.status || 'active'}`);
-  return bits.slice(0, 3).join(' · ') + (bits.length > 3 ? '…' : '');
 }
 
 function buildLeadsQueryParams({ tab, debouncedSearch, statusFilter, interestFilter }) {
@@ -105,6 +98,7 @@ export default function Leads() {
   const notify = useNotify();
   const confirm = useConfirm();
   const loading = useLoading();
+  const { isActive } = useSubscription();
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -179,7 +173,7 @@ export default function Leads() {
   const handleBulkStatus = async () => {
     if (!selected.size) return;
     const ok = await confirm(
-      `Set enrollment to “${bulkEnrollmentStatus}” on every campaign for ${selected.size} lead(s)? The send queue will be recalculated.`,
+      `Set enrollment to "${bulkEnrollmentStatus}" on every campaign for ${selected.size} lead(s)? The send queue will be recalculated.`,
     );
     if (!ok) return;
     loading.start();
@@ -209,7 +203,7 @@ export default function Leads() {
       return;
     }
     const ok = await confirm(
-      `Re-enroll ${targets.length} lead(s) using the “New email” values? Status becomes active; verification runs when enabled on your account.`,
+      `Re-enroll ${targets.length} lead(s) using the "New email" values? Status becomes active; verification runs when enabled on your account.`,
     );
     if (!ok) return;
     loading.start();
@@ -320,76 +314,115 @@ export default function Leads() {
     }
   };
 
+  const colSpan = tab === TAB_BOUNCED ? 9 : 7;
+
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-8 space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Leads</h1>
-          <p className="text-sm text-gray-500 max-w-2xl">
-            Search and manage contacts across campaigns. Use{' '}
-            <strong className="font-medium text-gray-700">Bounced &amp; Invalid</strong>{' '}
-            to fix addresses and put people back into the send flow (with verification when enabled).
-          </p>
+    <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-5" style={{ background: 'var(--do-bg)' }}>
+
+      {/* ── Hero ── */}
+      <div className="do-hero">
+        <div className="do-hero-eyebrow">Contacts · Leads</div>
+        <div className="do-hero-title">Lead Management</div>
+        <div className="do-hero-sub">
+          Search and manage contacts across campaigns. Use <strong style={{ opacity: 1 }}>Bounced &amp; Invalid</strong> to fix
+          addresses and put people back into the send flow.
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={exportCsv} disabled={!leads.length}>
-            Export CSV
-          </Button>
-          <FileUploadArea
-            size="sm"
-            accept=".csv,text/csv"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = '';
-              if (f) importRecoverCsv(f);
+        <div className="do-hero-actions">
+          <button
+            className="do-btn-hero"
+            onClick={exportCsv}
+            disabled={!leads.length}
+            style={!leads.length ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+          >
+            ↓ Export CSV
+          </button>
+
+          {!isActive && (
+            <span style={{
+              background: 'rgba(255,200,50,.18)',
+              border: '1px solid rgba(255,200,50,.4)',
+              color: 'var(--warning)',
+              borderRadius: 'var(--do-r-full)',
+              fontSize: 12,
+              fontWeight: 600,
+              padding: '6px 14px',
+            }}>
+              <Icon name="alert-triangle" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Upgrade to import leads
+            </span>
+          )}
+
+          <fieldset disabled={!isActive} style={{ border: 'none', padding: 0, margin: 0, ...(!isActive ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}>
+            <label style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'var(--gold-dim)',
+              color: 'var(--text)',
+              padding: '8px 18px',
+              borderRadius: 'var(--do-r-full)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              backdropFilter: 'blur(4px)',
+            }}>
+              ↑ Import recovery CSV
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (f) importRecoverCsv(f);
+                }}
+              />
+            </label>
+          </fieldset>
+        </div>
+      </div>
+
+      {/* ── Tab switcher ── */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        {[
+          { value: TAB_ALL, label: 'All Leads' },
+          { value: TAB_BOUNCED, label: 'Bounced & Invalid' },
+        ].map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            onClick={() => setTab(t.value)}
+            style={{
+              borderRadius: 'var(--do-r-full)',
+              border: tab === t.value ? '1.5px solid var(--do-gold-dark)' : '1px solid var(--do-border-dark)',
+              background: tab === t.value ? 'var(--do-gold-dark)' : 'var(--do-surface)',
+              color: tab === t.value ? 'var(--on-gold)' : 'var(--do-text2)',
+              fontSize: 12,
+              fontWeight: 600,
+              padding: '6px 16px',
+              cursor: 'pointer',
+              transition: 'all .15s ease',
             }}
           >
-            Import recovery CSV
-          </FileUploadArea>
-        </div>
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setTab(TAB_ALL)}
-          className={cn(
-            'rounded-full border text-xs font-medium px-3 py-1.5 transition-colors',
-            tab === TAB_ALL
-              ? 'bg-teal-500 text-white border-teal-500'
-              : 'bg-white text-gray-600 border-gray-300 hover:border-teal-300 hover:bg-teal-50',
-          )}
-        >
-          All leads
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab(TAB_BOUNCED)}
-          className={cn(
-            'rounded-full border text-xs font-medium px-3 py-1.5 transition-colors',
-            tab === TAB_BOUNCED
-              ? 'bg-teal-500 text-white border-teal-500'
-              : 'bg-white text-gray-600 border-gray-300 hover:border-teal-300 hover:bg-teal-50',
-          )}
-        >
-          Bounced &amp; Invalid
-        </button>
-      </div>
-
+      {/* ── Status filter pills (All tab) ── */}
       {tab === TAB_ALL && (
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-sm text-gray-500">Status:</span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 4 }}>
+          <span style={{ fontSize: 11, color: 'var(--do-text3)', fontWeight: 700, letterSpacing: '.5px', textTransform: 'uppercase', marginRight: 4 }}>Status</span>
           {STATUS_OPTIONS.map((o) => (
             <button
               key={o.value}
               type="button"
               onClick={() => setStatusFilter(o.value)}
-              className={cn(
-                'rounded-full border text-xs font-medium px-3 py-1',
-                statusFilter === o.value
-                  ? 'bg-teal-500 text-white border-teal-500'
-                  : 'bg-white text-gray-600 border-gray-300 hover:border-teal-300 hover:bg-teal-50',
-              )}
+              className="do-preset-pill"
+              style={statusFilter === o.value ? {
+                background: 'var(--do-gold-dark)',
+                borderColor: 'var(--do-gold-dark)',
+                color: 'var(--on-gold)',
+              } : {}}
             >
               {o.label}
             </button>
@@ -397,57 +430,89 @@ export default function Leads() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-sm text-gray-500">Interest:</span>
+      {/* ── Interest filter pills ── */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: 'var(--do-text3)', fontWeight: 700, letterSpacing: '.5px', textTransform: 'uppercase', marginRight: 4 }}>Interest</span>
         {INTEREST_FILTER_OPTIONS.map((o) => (
           <button
             key={o.value}
             type="button"
             onClick={() => setInterestFilter(o.value)}
-            className={cn(
-              'rounded-full border text-xs font-medium px-3 py-1',
-              interestFilter === o.value
-                ? 'bg-emerald-600 text-white border-emerald-600'
-                : 'bg-white text-gray-600 border-gray-300 hover:border-emerald-400 hover:bg-emerald-50',
-            )}
+            className="do-preset-pill"
+            style={interestFilter === o.value ? {
+              background: 'var(--do-gold-dark)',
+              borderColor: 'var(--do-gold-dark)',
+              color: 'var(--on-gold)',
+            } : {}}
           >
             {o.label}
           </button>
         ))}
       </div>
 
+      {/* ── Bounced tip card ── */}
       {tab === TAB_BOUNCED && (
-        <Card className="p-4 bg-amber-50/80 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
-          <p className="text-sm text-gray-800 dark:text-gray-200">
-            Edit the email for each row, then <strong className="font-medium">Save &amp; recover</strong>. That updates the
-            lead record (all campaigns), sets status to active, and either queues verification or reschedules immediately.
-            Export bad addresses to clean them elsewhere, then import a CSV with columns <code className="font-mono text-xs">id,email</code>.
-          </p>
-        </Card>
+        <div style={{
+          background: 'var(--do-orange-light)',
+          border: '1px solid var(--do-orange)',
+          borderRadius: 'var(--do-r)',
+          padding: '12px 16px',
+          fontSize: 13,
+          color: 'var(--do-text2)',
+          lineHeight: 1.6,
+        }}>
+          Edit the email for each row, then <strong>Save &amp; recover</strong>. That updates the lead record (all campaigns),
+          sets status to active, and either queues verification or reschedules immediately.
+          Export bad addresses to clean them elsewhere, then import a CSV with columns <code style={{ fontFamily: 'var(--do-font-mono)', fontSize: 11 }}>id,email</code>.
+        </div>
       )}
 
-      <div className="flex flex-wrap gap-4 items-end">
-        <div className="flex-1 min-w-[200px] max-w-md">
-          <Input
-            label="Search"
-            placeholder="Email or name…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+      {/* ── Search ── */}
+      <div style={{ maxWidth: 380 }}>
+        <Input
+          label="Search"
+          placeholder="Email or name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
+      {/* ── Bulk action bar ── */}
       {selected.size > 0 && (
-        <Card className="p-4 flex flex-wrap gap-3 items-center">
-          <span className="text-sm font-medium text-gray-700">{selected.size} selected</span>
-          <Button type="button" variant="destructive" size="sm" onClick={handleBulkDelete}>
+        <div className="do-card" style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--do-text)' }}>
+            {selected.size} selected
+          </span>
+
+          <button
+            type="button"
+            onClick={handleBulkDelete}
+            style={{
+              background: 'var(--do-red)',
+              color: 'var(--white)',
+              border: 'none',
+              borderRadius: 'var(--do-r-full)',
+              fontSize: 12,
+              fontWeight: 600,
+              padding: '6px 14px',
+              cursor: 'pointer',
+            }}
+          >
             Delete
-          </Button>
-          <div className="flex flex-wrap items-center gap-2">
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <select
-              className="rounded-md border-gray-300 text-sm shadow-sm focus:ring-2 focus:ring-teal-300"
               value={bulkEnrollmentStatus}
               onChange={(e) => setBulkEnrollmentStatus(e.target.value)}
+              style={{
+                background: 'var(--do-surface)',
+                border: '1px solid var(--do-border-dark)',
+                borderRadius: 'var(--do-r-sm)',
+                color: 'var(--do-text2)',
+                fontSize: 12,
+                padding: '5px 10px',
+              }}
             >
               <option value="active">active</option>
               <option value="contacted">contacted</option>
@@ -456,161 +521,213 @@ export default function Leads() {
               <option value="unsubscribed">unsubscribed</option>
               <option value="wrong_person">wrong_person</option>
             </select>
-            <Button type="button" variant="outline" size="sm" onClick={handleBulkStatus}>
+            <button
+              type="button"
+              onClick={handleBulkStatus}
+              className="do-btn-outline"
+              style={{ fontSize: 12, padding: '5px 14px' }}
+            >
               Apply enrollment
-            </Button>
+            </button>
           </div>
-          {(tab === TAB_BOUNCED || tab === TAB_ALL) && (
-            <Button type="button" variant="default" size="sm" onClick={handleBulkReenroll}>
-              Re-enroll (recover)
-            </Button>
-          )}
-        </Card>
+
+          <button
+            type="button"
+            onClick={handleBulkReenroll}
+            className="do-btn-gold"
+            style={{ fontSize: 12, padding: '6px 14px' }}
+          >
+            Re-enroll (recover)
+          </button>
+        </div>
       )}
 
-      <Card className="overflow-x-auto max-w-full min-w-0">
-        <div className="px-4 py-2 text-sm text-gray-500 border-b border-gray-100">
+      {/* ── Leads table ── */}
+      <div className="do-card" style={{ overflow: 'hidden' }}>
+        <div style={{
+          padding: '10px 16px',
+          borderBottom: '1px solid var(--do-border)',
+          fontSize: 12,
+          color: 'var(--do-text3)',
+          fontWeight: 500,
+        }}>
           {leads.length} lead{leads.length !== 1 ? 's' : ''}
-          {tab === TAB_BOUNCED ? ' (bounced or invalid)' : ''}
+          {tab === TAB_BOUNCED ? ' — bounced or invalid' : ''}
         </div>
-        <table className="min-w-max w-full table-auto border-collapse text-sm">
-          <thead>
-            <tr className="text-left text-gray-600 border-b">
-              <th className="p-2 w-10">
-                <input
-                  type="checkbox"
-                  className="rounded"
-                  checked={visibleIds.length > 0 && selected.size === visibleIds.length}
-                  onChange={toggleAll}
-                  aria-label="Select all"
-                />
-              </th>
-              <th className="p-2">Email</th>
-              <th className="p-2">Name</th>
-              <th className="p-2">Verify / enrollments</th>
-              <th className="p-2">Campaigns</th>
-              <th className="p-2">Sending inbox</th>
-              <th className="p-2">Enrolled</th>
-              {tab === TAB_BOUNCED && <th className="p-2 min-w-[200px]">New email</th>}
-              {tab === TAB_BOUNCED && <th className="p-2 w-44">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {leads.length === 0 ? (
+
+        <div style={{ overflowX: 'auto' }}>
+          <table className="do-tbl" style={{ minWidth: 700 }}>
+            <thead>
               <tr>
-                <td colSpan={tab === TAB_BOUNCED ? 9 : 7} className="p-8 text-center text-gray-500">
-                  No leads match this view.
-                </td>
+                <th style={{ width: 36 }}>
+                  <input
+                    type="checkbox"
+                    className="rounded"
+                    checked={visibleIds.length > 0 && selected.size === visibleIds.length}
+                    onChange={toggleAll}
+                    aria-label="Select all"
+                  />
+                </th>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Campaigns</th>
+                <th>Sending inbox</th>
+                <th>Enrolled</th>
+                {tab === TAB_BOUNCED && <th style={{ minWidth: 200 }}>New email</th>}
+                {tab === TAB_BOUNCED && <th style={{ width: 160 }}>Actions</th>}
               </tr>
-            ) : (
-              leads.map((l) => (
-                <tr key={l.id} className="even:bg-gray-50 dark:even:bg-gray-800/40 border-b border-gray-100">
-                  <td className="p-2 align-top">
-                    <input
-                      type="checkbox"
-                      className="rounded"
-                      checked={selected.has(l.id)}
-                      onChange={() => toggleOne(l.id)}
-                      aria-label={`Select ${l.email}`}
-                    />
+            </thead>
+            <tbody>
+              {leads.length === 0 ? (
+                <tr>
+                  <td colSpan={colSpan} style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--do-text4)' }}>
+                    No leads match this view.
                   </td>
-                  <td className="p-2 align-top font-mono text-xs">
-                    <Link to={`/leads/${l.id}`} className="text-teal-600 hover:underline">
-                      {l.email}
-                    </Link>
-                  </td>
-                  <td className="p-2 align-top">{l.name || '—'}</td>
-                  <td className="p-2 align-top">
-                    <div className="flex flex-wrap gap-1">
-                      {l.email_verification_status && (
-                        <span
-                          className={cn(
-                            'rounded-full px-2 py-0.5 text-xs font-medium',
-                            statusPillClass(l.email_verification_status),
-                          )}
-                        >
-                          verify: {l.email_verification_status}
-                        </span>
-                      )}
-                      {(l.campaigns || []).slice(0, 3).map((c) => (
-                        <span
-                          key={c.campaign_id}
-                          className={cn('rounded-full px-2 py-0.5 text-xs font-medium', statusPillClass(c.status))}
-                          title={`${c.campaign_name}: ${c.status}${c.interest ? ` · ${c.interest}` : ''}`}
-                        >
-                          {c.status}
-                        </span>
-                      ))}
-                      {(l.campaigns || []).length > 3 && (
-                        <span className="text-xs text-gray-500">+{l.campaigns.length - 3}</span>
-                      )}
-                      {!(l.campaigns || []).length && !l.email_verification_status && (
-                        <span className="text-gray-400 text-xs">—</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="p-2 align-top">
-                    <div className="flex flex-wrap gap-1 max-w-xs">
-                      {(l.campaigns || []).map((c) => (
-                        <Link
-                          key={c.campaign_id}
-                          to={`/campaigns/${c.campaign_id}#leads`}
-                          className="bg-gray-200 dark:bg-gray-600 rounded-full px-2 py-0.5 text-xs hover:bg-gray-300 dark:hover:bg-gray-500"
-                        >
-                          {c.campaign_name}
-                        </Link>
-                      ))}
-                      {!(l.campaigns || []).length && <span className="text-gray-400">—</span>}
-                    </div>
-                  </td>
-                  <td className="p-2 align-top">
-                    <div className="flex flex-col gap-1 max-w-xs">
-                      {(l.campaigns || []).map((c) => (
-                        <div key={c.campaign_id} className="text-xs">
-                          {c.from_inbox_email ? (
-                            <span className="font-mono text-gray-700" title={`${c.campaign_name}: sent from ${c.from_inbox_email}`}>
-                              {c.from_inbox_email}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </div>
-                      ))}
-                      {!(l.campaigns || []).length && <span className="text-gray-400 text-xs">—</span>}
-                    </div>
-                  </td>
-                  <td className="p-2 align-top text-gray-600">{formatEnrolled(l.campaigns)}</td>
-                  {tab === TAB_BOUNCED && (
-                    <td className="p-2 align-top">
+                </tr>
+              ) : (
+                leads.map((l) => (
+                  <tr key={l.id}>
+                    <td style={{ verticalAlign: 'top' }}>
                       <input
-                        type="email"
-                        className="w-full rounded-md border-gray-300 text-sm shadow-sm focus:ring-2 focus:ring-teal-300"
-                        value={emailDrafts[l.id] ?? l.email}
-                        onChange={(e) =>
-                          setEmailDrafts((prev) => ({
-                            ...prev,
-                            [l.id]: e.target.value,
-                          }))
-                        }
+                        type="checkbox"
+                        className="rounded"
+                        checked={selected.has(l.id)}
+                        onChange={() => toggleOne(l.id)}
+                        aria-label={`Select ${l.email}`}
                       />
                     </td>
-                  )}
-                  {tab === TAB_BOUNCED && (
-                    <td className="p-2 align-top space-y-1">
-                      <Button type="button" size="sm" variant="default" onClick={() => recoverOne(l)}>
-                        Save &amp; recover
-                      </Button>
-                      <Button type="button" size="sm" variant="outline" onClick={() => markActiveOne(l)}>
-                        Active only
-                      </Button>
+                    <td className="mono" style={{ verticalAlign: 'top' }}>
+                      <Link
+                        to={`/leads/${l.id}`}
+                        style={{ color: 'var(--do-gold-dark)', textDecoration: 'none', fontWeight: 500 }}
+                        onMouseOver={e => e.target.style.textDecoration = 'underline'}
+                        onMouseOut={e => e.target.style.textDecoration = 'none'}
+                      >
+                        {l.email}
+                      </Link>
                     </td>
-                  )}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </Card>
+                    <td style={{ verticalAlign: 'top', color: 'var(--do-text2)' }}>{l.name || '—'}</td>
+                    <td style={{ verticalAlign: 'top' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {l.email_verification_status && (
+                          <span className={statusPillClass(l.email_verification_status)}>
+                            verify: {l.email_verification_status}
+                          </span>
+                        )}
+                        {(l.campaigns || []).slice(0, 3).map((c) => (
+                          <span
+                            key={c.campaign_id}
+                            className={statusPillClass(c.status)}
+                            title={`${c.campaign_name}: ${c.status}${c.interest ? ` · ${c.interest}` : ''}`}
+                          >
+                            {c.status}
+                          </span>
+                        ))}
+                        {(l.campaigns || []).length > 3 && (
+                          <span style={{ fontSize: 11, color: 'var(--do-text4)' }}>+{l.campaigns.length - 3}</span>
+                        )}
+                        {!(l.campaigns || []).length && !l.email_verification_status && (
+                          <span style={{ color: 'var(--do-text4)', fontSize: 12 }}>—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ verticalAlign: 'top' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 260 }}>
+                        {(l.campaigns || []).map((c) => (
+                          <Link
+                            key={c.campaign_id}
+                            to={`/campaigns/${c.campaign_id}#leads`}
+                            style={{
+                              background: 'var(--do-surf3)',
+                              border: '1px solid var(--do-border)',
+                              borderRadius: 'var(--do-r-full)',
+                              padding: '2px 8px',
+                              fontSize: 11,
+                              color: 'var(--do-text2)',
+                              textDecoration: 'none',
+                              fontWeight: 500,
+                            }}
+                          >
+                            {c.campaign_name}
+                          </Link>
+                        ))}
+                        {!(l.campaigns || []).length && <span style={{ color: 'var(--do-text4)' }}>—</span>}
+                      </div>
+                    </td>
+                    <td style={{ verticalAlign: 'top' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxWidth: 220 }}>
+                        {(l.campaigns || []).map((c) => (
+                          <div key={c.campaign_id} style={{ fontSize: 11 }}>
+                            {c.from_inbox_email ? (
+                              <span
+                                className="mono"
+                                style={{ color: 'var(--do-text2)', fontSize: 11 }}
+                                title={`${c.campaign_name}: sent from ${c.from_inbox_email}`}
+                              >
+                                {c.from_inbox_email}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--do-text4)' }}>—</span>
+                            )}
+                          </div>
+                        ))}
+                        {!(l.campaigns || []).length && <span style={{ color: 'var(--do-text4)', fontSize: 11 }}>—</span>}
+                      </div>
+                    </td>
+                    <td style={{ verticalAlign: 'top', color: 'var(--do-text3)', fontSize: 12 }}>
+                      {formatEnrolled(l.campaigns)}
+                    </td>
+                    {tab === TAB_BOUNCED && (
+                      <td style={{ verticalAlign: 'top' }}>
+                        <input
+                          type="email"
+                          value={emailDrafts[l.id] ?? l.email}
+                          onChange={(e) =>
+                            setEmailDrafts((prev) => ({ ...prev, [l.id]: e.target.value }))
+                          }
+                          style={{
+                            width: '100%',
+                            background: 'var(--do-surface)',
+                            border: '1px solid var(--do-border-dark)',
+                            borderRadius: 'var(--do-r-sm)',
+                            color: 'var(--do-text)',
+                            fontSize: 12,
+                            padding: '5px 8px',
+                            fontFamily: 'var(--do-font-mono)',
+                          }}
+                        />
+                      </td>
+                    )}
+                    {tab === TAB_BOUNCED && (
+                      <td style={{ verticalAlign: 'top' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          <button
+                            type="button"
+                            onClick={() => recoverOne(l)}
+                            className="do-btn-gold"
+                            style={{ fontSize: 11, padding: '5px 10px' }}
+                          >
+                            Save &amp; recover
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => markActiveOne(l)}
+                            className="do-btn-outline"
+                            style={{ fontSize: 11, padding: '4px 10px' }}
+                          >
+                            Active only
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

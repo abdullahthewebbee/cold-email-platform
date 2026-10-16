@@ -9,12 +9,14 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from app.rate_limit import limiter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.auth import get_current_org_id
 from app.models import GmailAccount, GmailMessage, GmailSyncState, Inbox, Office365Account, Office365Message
 from app.app_settings import get_office365_oauth_credentials
 from app.sender import SendResult, send_email
@@ -84,8 +86,9 @@ async def get_unibox(
     leads_only: bool = Query(default=True),
     lead_status: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
-    return await list_unibox_conversations(db, page=page, page_size=page_size, leads_only=leads_only, lead_status=lead_status)
+    return await list_unibox_conversations(db, page=page, page_size=page_size, leads_only=leads_only, lead_status=lead_status, org_id=org_id)
 
 
 @router.get("/status")
@@ -105,8 +108,12 @@ async def mark_unibox_thread_read(
     thread_id: str,
     inbox_id: int = Query(..., ge=1),
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Mark a thread's unread-lead-reply flag as cleared."""
+    owns = await db.execute(select(Inbox.id).where(Inbox.id == inbox_id, Inbox.org_id == org_id))
+    if not owns.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Inbox not found")
     found = await mark_thread_read(db, thread_id=thread_id, inbox_id=inbox_id)
     if not found:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -118,10 +125,10 @@ _SYNC_PROVIDERS = ("gmail", "office365")
 
 
 @router.post("/sync")
-async def trigger_unibox_sync(data: UniboxSyncRequest, db: AsyncSession = Depends(get_db)):
+async def trigger_unibox_sync(data: UniboxSyncRequest, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     if data.inbox_id:
         inbox_row = await db.execute(
-            select(Inbox.id).where(Inbox.id == data.inbox_id, Inbox.provider.in_(_SYNC_PROVIDERS))
+            select(Inbox.id).where(Inbox.id == data.inbox_id, Inbox.org_id == org_id, Inbox.provider.in_(_SYNC_PROVIDERS))
         )
         inbox_id = inbox_row.scalar_one_or_none()
         if not inbox_id:
@@ -129,7 +136,7 @@ async def trigger_unibox_sync(data: UniboxSyncRequest, db: AsyncSession = Depend
         await queue_sync_for_inbox(inbox_id, reason="manual")
         return {"ok": True, "queued": 1, "inbox_ids": [inbox_id]}
 
-    inbox_rows = await db.execute(select(Inbox.id).where(Inbox.provider.in_(_SYNC_PROVIDERS)))
+    inbox_rows = await db.execute(select(Inbox.id).where(Inbox.org_id == org_id, Inbox.provider.in_(_SYNC_PROVIDERS)))
     inbox_ids = [int(row[0]) for row in inbox_rows.all()]
     if not inbox_ids:
         return {"ok": True, "queued": 0, "inbox_ids": []}
@@ -139,11 +146,11 @@ async def trigger_unibox_sync(data: UniboxSyncRequest, db: AsyncSession = Depend
 
 
 @router.post("/load-more")
-async def trigger_unibox_load_more(data: UniboxLoadMoreRequest, db: AsyncSession = Depends(get_db)):
+async def trigger_unibox_load_more(data: UniboxLoadMoreRequest, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     window_days = max(1, int(data.window_days))
     if data.inbox_id:
         inbox_row = await db.execute(
-            select(Inbox.id).where(Inbox.id == data.inbox_id, Inbox.provider.in_(_SYNC_PROVIDERS))
+            select(Inbox.id).where(Inbox.id == data.inbox_id, Inbox.org_id == org_id, Inbox.provider.in_(_SYNC_PROVIDERS))
         )
         inbox_id = inbox_row.scalar_one_or_none()
         if not inbox_id:
@@ -155,7 +162,7 @@ async def trigger_unibox_load_more(data: UniboxLoadMoreRequest, db: AsyncSession
         )
         return {"ok": True, "queued": 1, "inbox_ids": [inbox_id], "window_days": window_days}
 
-    inbox_rows = await db.execute(select(Inbox.id).where(Inbox.provider.in_(_SYNC_PROVIDERS)))
+    inbox_rows = await db.execute(select(Inbox.id).where(Inbox.org_id == org_id, Inbox.provider.in_(_SYNC_PROVIDERS)))
     inbox_ids = [int(row[0]) for row in inbox_rows.all()]
     if not inbox_ids:
         return {"ok": True, "queued": 0, "inbox_ids": [], "window_days": window_days}
@@ -172,12 +179,16 @@ async def get_unibox_thread(
     thread_id: str,
     inbox_id: int | None = Query(default=None, ge=1),
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     try:
         payload = await get_thread_messages(db, thread_id=thread_id, inbox_id=inbox_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if payload is None:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    owns = await db.execute(select(Inbox.id).where(Inbox.id == int(payload["inbox_id"]), Inbox.org_id == org_id))
+    if not owns.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Thread not found")
 
     hydrated = await hydrate_thread_on_demand(
@@ -197,9 +208,55 @@ async def get_unibox_thread(
     return payload
 
 
+@router.post("/threads/{thread_id}/draft-reply")
+@limiter.limit("20/minute")  # AI call per request — real cost
+async def draft_unibox_reply(
+    request: Request,
+    thread_id: str,
+    inbox_id: int | None = Query(default=None, ge=1),
+    db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
+):
+    """Generate an AI-drafted reply for this thread using the reply_draft_assistant
+    feature. Returns 503 if the feature isn't enabled/configured in Settings."""
+    from app.ai_classifier import draft_reply as _draft_reply
+
+    try:
+        payload = await get_thread_messages(db, thread_id=thread_id, inbox_id=inbox_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    owns = await db.execute(select(Inbox.id).where(Inbox.id == int(payload["inbox_id"]), Inbox.org_id == org_id))
+    if not owns.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    messages = payload.get("messages") or []
+    if not messages:
+        raise HTTPException(status_code=400, detail="No messages in this thread to reply to")
+
+    thread_messages = []
+    for m in messages:
+        body = m.get("body_plain") or ""
+        if not body and m.get("body_html"):
+            import re as _re
+            body = _re.sub(r"<[^>]+>", " ", m["body_html"])
+        thread_messages.append({
+            "from": m.get("from", ""),
+            "timestamp": m.get("timestamp", ""),
+            "body": body,
+        })
+
+    latest = thread_messages[-1]
+    draft = await _draft_reply(db, reply_text=latest["body"], thread_messages=thread_messages)
+    if draft is None:
+        raise HTTPException(status_code=503, detail="AI Reply Draft Assistant is not enabled or configured. Set it up in Settings.")
+    return {"draft": draft}
+
+
 @router.post("/send")
-async def send_unibox_email(data: UniboxSendRequest, db: AsyncSession = Depends(get_db)):
-    inbox_row = await db.execute(select(Inbox).where(Inbox.id == data.inbox_id))
+async def send_unibox_email(data: UniboxSendRequest, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
+    inbox_row = await db.execute(select(Inbox).where(Inbox.id == data.inbox_id, Inbox.org_id == org_id))
     inbox = inbox_row.scalar_one_or_none()
     if not inbox:
         raise HTTPException(status_code=404, detail="Inbox not found")
@@ -293,6 +350,11 @@ async def send_unibox_email(data: UniboxSendRequest, db: AsyncSession = Depends(
         office365_client_id=o365_client_id,
         office365_client_secret=o365_client_secret,
         office365_tenant_id=o365_tenant_id,
+        smtp_host=inbox.smtp_host or "",
+        smtp_port=inbox.smtp_port,
+        smtp_username=inbox.smtp_username or "",
+        smtp_password=inbox.smtp_password or "",
+        smtp_encryption=inbox.smtp_encryption or "starttls",
         thread_id=data.thread_id,
         conversation_id=data.thread_id if provider == "office365" else None,
         reply_graph_message_id=reply_graph_message_id if provider == "office365" else None,
@@ -376,6 +438,40 @@ async def send_unibox_email(data: UniboxSendRequest, db: AsyncSession = Depends(
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
 
+@router.delete("/threads/{thread_id}")
+async def delete_unibox_thread(
+    thread_id: str,
+    inbox_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
+):
+    """Hide a thread from the unibox (sets hidden=True, survives re-sync)."""
+    from app.models import GmailThread, Office365Thread
+    from sqlalchemy import update as sql_update
+
+    # Try Gmail thread
+    gmail_res = await db.execute(
+        select(GmailThread).join(Inbox, GmailThread.inbox_id == Inbox.id)
+        .where(GmailThread.thread_id == thread_id, Inbox.org_id == org_id)
+    )
+    gmail_thread = gmail_res.scalar_one_or_none()
+    if gmail_thread:
+        gmail_thread.hidden = True
+        await db.commit()
+        return {"ok": True}
+
+    # Try Office365 thread
+    o365_res = await db.execute(
+        select(Office365Thread).join(Inbox, Office365Thread.inbox_id == Inbox.id)
+        .where(Office365Thread.conversation_id == thread_id, Inbox.org_id == org_id)
+    )
+    o365_thread = o365_res.scalar_one_or_none()
+    if o365_thread:
+        o365_thread.hidden = True
+        await db.commit()
+        return {"ok": True}
+
+    raise HTTPException(status_code=404, detail="Thread not found")
 
 @router.get("/events")
 async def unibox_events_sse(request: Request):

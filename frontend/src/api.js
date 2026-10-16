@@ -17,6 +17,14 @@ function _authHeaders() {
   const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+function _extractErrorMessage(text, fallback) {
+  if (!text) return fallback;
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.detail === 'string') return parsed.detail;
+  } catch (_) {}
+  return text;
+}
 
 // Singleton promise for in-flight refresh – prevents multiple concurrent 401s
 // from each independently trying to rotate the refresh token (which would cause
@@ -24,10 +32,12 @@ function _authHeaders() {
 let _refreshPromise = null;
 
 /** Set by server on successful POST /settings/backup/restore/execute so the SPA reloads with fresh data. */
-const RELOAD_AFTER_RESTORE_HEADER = 'X-Emissary-Reload';
+const RELOAD_AFTER_RESTORE_HEADER = 'X-InboxAir-Reload';
+const RELOAD_AFTER_RESTORE_HEADER_LEGACY = 'X-DevOutreach-Reload';
+const RELOAD_AFTER_RESTORE_HEADER_OLDEST = 'X-Emissary-Reload';
 
 function scheduleReloadIfRestoreComplete(res) {
-  if (res.headers.get(RELOAD_AFTER_RESTORE_HEADER) === '1') {
+  if ((res.headers.get(RELOAD_AFTER_RESTORE_HEADER) || res.headers.get(RELOAD_AFTER_RESTORE_HEADER_LEGACY) || res.headers.get(RELOAD_AFTER_RESTORE_HEADER_OLDEST)) === '1') {
     setTimeout(() => window.location.reload(), 300);
   }
 }
@@ -69,7 +79,7 @@ async function request(path, options = {}) {
       const retryRes = await fetch(API_ROOT + path, retryOptions);
       if (!retryRes.ok) {
         const text = await retryRes.text();
-        const err = new Error(text || retryRes.statusText);
+        const err = new Error(_extractErrorMessage(text, retryRes.statusText));
         err.status = retryRes.status;
         throw err;
       }
@@ -85,7 +95,7 @@ async function request(path, options = {}) {
   }
   if (!res.ok) {
     const text = await res.text();
-    const err = new Error(text || res.statusText);
+    const err = new Error(_extractErrorMessage(text, res.statusText));
     err.status = res.status;
     throw err;
   }
@@ -109,7 +119,7 @@ async function downloadRequest(path) {
       });
       if (!res.ok) {
         const text = await res.text();
-        const err = new Error(text || res.statusText);
+        const err = new Error(_extractErrorMessage(text, res.statusText));
         err.status = res.status;
         throw err;
       }
@@ -122,7 +132,7 @@ async function downloadRequest(path) {
   }
   if (!res.ok) {
     const text = await res.text();
-    const err = new Error(text || res.statusText);
+    const err = new Error(_extractErrorMessage(text, res.statusText));
     err.status = res.status;
     throw err;
   }
@@ -150,7 +160,7 @@ async function downloadPostRequest(path, data) {
       });
       if (!res.ok) {
         const text = await res.text();
-        const err = new Error(text || res.statusText);
+        const err = new Error(_extractErrorMessage(text, res.statusText));
         err.status = res.status;
         throw err;
       }
@@ -163,7 +173,7 @@ async function downloadPostRequest(path, data) {
   }
   if (!res.ok) {
     const text = await res.text();
-    const err = new Error(text || res.statusText);
+    const err = new Error(_extractErrorMessage(text, res.statusText));
     err.status = res.status;
     throw err;
   }
@@ -193,7 +203,7 @@ export const api = {
         });
         if (!retryRes.ok) {
           const text = await retryRes.text();
-          const err = new Error(text || retryRes.statusText);
+          const err = new Error(_extractErrorMessage(text, retryRes.statusText));
           err.status = retryRes.status;
           throw err;
         }
@@ -205,7 +215,7 @@ export const api = {
     }
     if (!res.ok) {
       const text = await res.text();
-      const err = new Error(text || res.statusText);
+      const err = new Error(_extractErrorMessage(text, res.statusText));
       err.status = res.status;
       throw err;
     }
@@ -231,7 +241,7 @@ export const api = {
         });
         if (!retryRes.ok) {
           const text = await retryRes.text();
-          const err = new Error(text || retryRes.statusText);
+          const err = new Error(_extractErrorMessage(text, retryRes.statusText));
           err.status = retryRes.status;
           throw err;
         }
@@ -243,7 +253,7 @@ export const api = {
     }
     if (!res.ok) {
       const text = await res.text();
-      const err = new Error(text || res.statusText);
+      const err = new Error(_extractErrorMessage(text, res.statusText));
       err.status = res.status;
       throw err;
     }

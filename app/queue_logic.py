@@ -12,10 +12,8 @@ except ImportError:
     ZoneInfo = None  # type: ignore[assignment,misc]  # Python < 3.9 fallback
 
 from app.campaign_lead_status import campaign_lead_schedule_eligibility_clause
-from app.models import Campaign, Sequence, CampaignLead, QueueSlot, Inbox, EmailLog, CampaignInbox, Lead
-
+from app.models import Campaign, Sequence, CampaignLead, QueueSlot, Inbox, EmailLog, CampaignInbox, Lead, SequenceNode, SequenceEdge, LeadReply
 log = logging.getLogger("quickly.queue")
-
 
 def compute_effective_daily_limit(inbox, for_date: Optional[date] = None) -> int:
     """Return the effective daily send limit for an inbox on a given date.
@@ -450,6 +448,229 @@ async def _pick_inbox_with_capacity(
             return (inbox_id, max_per_day)
     return None
 
+
+async def schedule_single_node_send(
+    session: AsyncSession,
+    campaign_lead_id: int,
+    campaign: Campaign,
+    inboxes: List[Tuple[int, any, int]],  # (inbox_id, inbox_obj, wait_minutes_between)
+    lead_id: int,
+    node_id: int,
+    earliest_date: Optional[date] = None,  # earliest campaign-local date this may send on
+    cache: Optional[dict] = None,
+) -> Optional[datetime]:
+    """Reserve exactly one QueueSlot for a branch-tree node send.
+
+    Unlike reserve_slots_for_lead (flat sequences, multi-step lookahead),
+    this schedules a single email — the next node in a lead's tree path is
+    only known after evaluating edge conditions later, so there is nothing
+    to look ahead to. Returns the scheduled_date (naive UTC) actually used,
+    or None if no inbox had capacity within the search window.
+    """
+    if not inboxes:
+        log.warning("schedule_single_node_send: no inboxes for campaign %s", campaign.id)
+        return None
+
+    sending_days = campaign.sending_days or [0, 1, 2, 3, 4]
+    available_inbox_ids = [i[0] for i in inboxes]
+    preferred_inbox_id = await _get_preferred_inbox_for_lead(
+        session, lead_id, campaign.id, available_inbox_ids, campaign_lead_id
+    )
+    if preferred_inbox_id:
+        inboxes = [i for i in inboxes if i[0] == preferred_inbox_id]
+        if not inboxes:
+            log.warning("schedule_single_node_send: preferred inbox %s not in available set", preferred_inbox_id)
+            return None
+
+    now = _campaign_now(campaign)
+    today = now.date()
+    start_date = earliest_date or today
+    current_date = next_business_date(start_date, sending_days, 0)
+    if current_date < today:
+        current_date = next_business_date(today, sending_days, 0)
+
+    sending_start = campaign.sending_hours_start or "09:00"
+    sending_end = campaign.sending_hours_end or "17:00"
+    round_robin = campaign_lead_id % len(inboxes) if inboxes else 0
+
+    max_days_ahead = 60
+    for _ in range(max_days_ahead):
+        is_today = (current_date == today)
+        picked = None
+        for i in range(len(inboxes)):
+            idx = (round_robin + i) % len(inboxes)
+            inbox_id, inbox_obj, wait_minutes = inboxes[idx]
+            max_per_day = compute_effective_daily_limit(inbox_obj, current_date)
+            count = await count_slots_on_date(session, inbox_id, current_date, cache)
+            if count >= max_per_day:
+                continue
+            if is_today:
+                send_dt = await _next_available_send_time_today(
+                    session, inbox_id, current_date, sending_start, sending_end,
+                    wait_minutes, now, cache, campaign,
+                )
+                if send_dt is None:
+                    continue
+            else:
+                send_dt = datetime.combine(current_date, _estimated_send_time(sending_start, wait_minutes, count + 1))
+            picked = (inbox_id, inbox_obj, send_dt)
+            break
+
+        if picked:
+            inbox_id, inbox_obj, send_dt = picked
+            jittered = _apply_jitter(send_dt, inbox_obj)
+            # Guard against jitter pushing the send past the configured window end
+            # (matches the same safety clamp used elsewhere in this file).
+            end_boundary = datetime.combine(current_date, _parse_time(sending_end))
+            if jittered > end_boundary:
+                jittered = send_dt
+            scheduled_dt = _to_utc_naive(jittered, campaign)
+            position = await next_available_slot_position(session, inbox_id, current_date, cache)
+
+            existing_count_result = await session.execute(
+                select(func.count(QueueSlot.id)).where(QueueSlot.campaign_lead_id == campaign_lead_id)
+            )
+            next_sequence_index = existing_count_result.scalar() or 0
+
+            slot = QueueSlot(
+                campaign_lead_id=campaign_lead_id,
+                inbox_id=inbox_id,
+                sequence_index=next_sequence_index,
+                scheduled_date=scheduled_dt,
+                position_in_day=position,
+                node_id=node_id,
+            )
+            session.add(slot)
+            if cache is not None:
+                key = (inbox_id, current_date)
+                cache[key] = cache.get(key, 0) + 1
+            log.info(
+                "schedule_single_node_send: cl=%s node=%s inbox=%s date=%s pos=%s",
+                campaign_lead_id, node_id, inbox_id, scheduled_dt, position,
+            )
+            return scheduled_dt
+
+        current_date = next_business_date(current_date, sending_days, 1)
+
+    log.warning("schedule_single_node_send: no capacity found within %d days for cl=%s", max_days_ahead, campaign_lead_id)
+    return None
+
+async def evaluate_tree_transitions(session: AsyncSession) -> int:
+    """Find every CampaignLead whose branch-tree evaluation is due, check the
+    outcome of their last node's email (opened/clicked), and schedule the
+    next matching node's send.
+
+    Called periodically (see run_tree_transition_job in app/jobs.py). Returns
+    the number of leads transitioned.
+    """
+    now = time_provider.utcnow()
+    due_result = await session.execute(
+        select(CampaignLead).where(
+            CampaignLead.node_ready_at.isnot(None),
+            CampaignLead.node_ready_at <= now,
+            CampaignLead.enrollment_status.in_(["active", "contacted"]),
+        )
+    )
+    due_leads = due_result.scalars().all()
+    if not due_leads:
+        return 0
+
+    transitioned = 0
+    for cl in due_leads:
+        # Stop the tree path if the lead has replied.
+        campaign_res = await session.execute(select(Campaign).where(Campaign.id == cl.campaign_id))
+        campaign = campaign_res.scalar_one_or_none()
+        if campaign is None:
+            cl.node_ready_at = None
+            continue
+        reply_check = await session.execute(
+            select(LeadReply).where(LeadReply.lead_id == cl.lead_id, LeadReply.campaign_id == cl.campaign_id)
+        )
+        replied = bool(reply_check.scalar_one_or_none())
+        if getattr(campaign, "stop_on_reply", False) and replied:
+            cl.node_ready_at = None
+            continue
+
+        if cl.current_node_id is None:
+            cl.node_ready_at = None
+            continue
+
+        edges_result = await session.execute(
+            select(SequenceEdge).where(SequenceEdge.from_node_id == cl.current_node_id)
+        )
+        edges = edges_result.scalars().all()
+        if not edges:
+            cl.node_ready_at = None
+            continue
+
+        # Most recent sent email for this lead in this campaign — that's the
+        # one the outgoing edges' conditions are evaluated against.
+        latest_log_result = await session.execute(
+            select(EmailLog)
+            .where(EmailLog.lead_id == cl.lead_id, EmailLog.campaign_id == cl.campaign_id)
+            .order_by(EmailLog.sent_at.desc())
+            .limit(1)
+        )
+        latest_log = latest_log_result.scalar_one_or_none()
+        opened = bool(latest_log.opened) if latest_log else False
+        clicked = bool(latest_log.clicked) if latest_log else False
+
+        def _edge_matches(edge: SequenceEdge) -> bool:
+            if edge.condition_type == "replied":
+                return replied
+            if edge.condition_type == "opened_no_reply":
+                return opened and not replied
+            if edge.condition_type == "opened":
+                return opened
+            if edge.condition_type == "not_opened":
+                return not opened
+            if edge.condition_type == "clicked":
+                return clicked
+            if edge.condition_type == "not_clicked":
+                return not clicked
+            return False  # 'always' handled separately as fallback
+
+        # Priority order: a reply always outranks an open/click signal, since a
+        # lead who replied should never also get an "opened" follow-up. Only
+        # one edge is ever selected, so only one email is ever scheduled here.
+        _PRIORITY = ["replied", "opened_no_reply", "clicked", "not_clicked", "opened", "not_opened"]
+        matched_edge = None
+        for cond in _PRIORITY:
+            candidate = next((e for e in edges if e.condition_type == cond and _edge_matches(e)), None)
+            if candidate is not None:
+                matched_edge = candidate
+                break
+        if matched_edge is None:
+            matched_edge = next((e for e in edges if e.condition_type == "always"), None)
+
+        if matched_edge is None:
+            # No edge matched and no 'always' fallback — path ends here.
+            cl.node_ready_at = None
+            continue
+
+        sched_data = await _fetch_campaign_scheduling_data(session, cl.campaign_id)
+        if sched_data is None:
+            cl.node_ready_at = None
+            continue
+        sched_campaign, sched_inboxes, _sched_sequences = sched_data
+
+        scheduled = await schedule_single_node_send(
+            session, cl.id, sched_campaign, sched_inboxes, cl.lead_id, matched_edge.to_node_id,
+        )
+        if scheduled is not None:
+            cl.current_node_id = matched_edge.to_node_id
+            cl.node_ready_at = None
+            transitioned += 1
+            log.info(
+                "evaluate_tree_transitions: cl=%s %s -> %s (condition=%s)",
+                cl.id, matched_edge.from_node_id, matched_edge.to_node_id, matched_edge.condition_type,
+            )
+        else:
+            # Couldn't find capacity right now — try again on the next scan.
+            log.warning("evaluate_tree_transitions: no capacity to schedule cl=%s node=%s, will retry", cl.id, matched_edge.to_node_id)
+
+    await session.flush()
+    return transitioned
 
 async def reserve_slots_for_lead(
     session: AsyncSession,
@@ -1305,8 +1526,32 @@ async def _recalculate_queue_for_campaign_leads(
     # PHASE 3: RESERVE new slots for all leads (cache-only, zero DB queries)
     # ========================================================================
     if not sequences:
-        log.info("%s: no sequences, nothing to reserve", log_prefix)
-        log.info("%s: done for campaign %s", log_prefix, campaign_id)
+        log.info("%s: no flat sequences for campaign %s � checking for tree mode", log_prefix, campaign_id)
+        root_node_result = await session.execute(
+            select(SequenceNode).where(
+                SequenceNode.campaign_id == campaign_id,
+                SequenceNode.is_root == True,  # noqa: E712
+            ).limit(1)
+        )
+        root_node = root_node_result.scalar_one_or_none()
+        if root_node is None:
+            log.info("%s: no sequences and no tree root node, nothing to reserve", log_prefix)
+            log.info("%s: done for campaign %s", log_prefix, campaign_id)
+            return
+        log.info("%s: tree-mode campaign %s root_node=%s initializing %d new leads",
+                 log_prefix, campaign_id, root_node.id, len(new_leads))
+        for cl in new_leads:
+            scheduled = await schedule_single_node_send(
+                session, cl.id, campaign, inboxes, cl.lead_id, root_node.id,
+            )
+            if scheduled is not None:
+                cl.current_node_id = root_node.id
+                cl.enrollment_status = "contacted"
+                log.info("%s: tree cl=%s root_node=%s scheduled", log_prefix, cl.id, root_node.id)
+            else:
+                log.warning("%s: no capacity for tree cl=%s node=%s", log_prefix, cl.id, root_node.id)
+        await session.flush()
+        log.info("%s: done for campaign %s (tree-mode)", log_prefix, campaign_id)
         return
 
     # For ASAP mode, filter sequences per lead so only personalized sequences

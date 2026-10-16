@@ -12,8 +12,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.database import get_db
+from app.auth import get_current_org_id, require_admin
 from app.settings_manager import settings
 
 
@@ -64,10 +64,10 @@ async def list_webhook_events():
 
 
 @router.get("/webhooks", response_model=list[WebhookResponse])
-async def list_webhooks(db: AsyncSession = Depends(get_db)):
+async def list_webhooks(db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     """Return all configured webhooks ordered by creation date."""
     result = await db.execute(
-        select(Webhook).order_by(Webhook.created_at.desc())
+        select(Webhook).where(Webhook.org_id == org_id).order_by(Webhook.created_at.desc())
     )
     return result.scalars().all()
 
@@ -76,12 +76,14 @@ async def list_webhooks(db: AsyncSession = Depends(get_db)):
 async def create_webhook(
     payload: WebhookCreate,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Register a new outbound webhook endpoint."""
     invalid = [e for e in payload.events if e not in WEBHOOK_EVENT_TYPES]
     if invalid:
         raise HTTPException(400, f"Invalid event types: {invalid}")
     wh = Webhook(
+        org_id=org_id,
         url=payload.url.strip(),
         secret=payload.secret,
         events=payload.events,
@@ -91,6 +93,16 @@ async def create_webhook(
     db.add(wh)
     await db.commit()
     await db.refresh(wh)
+    try:
+        from app.audit import audit
+        from app.models import User as _User
+        _u = (await db.execute(select(_User).where(_User.org_id == org_id))).scalars().first()
+        await audit(db, None, _u, "webhook.created",
+                    target_type="webhook", target_id=str(wh.id),
+                    detail={"url": wh.url, "events": wh.events})
+        await db.commit()
+    except Exception:
+        pass
     return wh
 
 
@@ -99,9 +111,10 @@ async def update_webhook(
     webhook_id: int,
     payload: WebhookUpdate,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Partially update an existing webhook."""
-    result = await db.execute(select(Webhook).where(Webhook.id == webhook_id))
+    result = await db.execute(select(Webhook).where(Webhook.id == webhook_id, Webhook.org_id == org_id))
     wh = result.scalar_one_or_none()
     if not wh:
         raise HTTPException(404, "Webhook not found")
@@ -122,9 +135,10 @@ async def update_webhook(
 async def delete_webhook(
     webhook_id: int,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Delete a webhook."""
-    result = await db.execute(select(Webhook).where(Webhook.id == webhook_id))
+    result = await db.execute(select(Webhook).where(Webhook.id == webhook_id, Webhook.org_id == org_id))
     wh = result.scalar_one_or_none()
     if not wh:
         raise HTTPException(404, "Webhook not found")
@@ -137,6 +151,7 @@ async def delete_webhook(
 async def test_webhook(
     webhook_id: int,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Fire a synthetic test event to a specific webhook.
 
@@ -144,7 +159,7 @@ async def test_webhook(
     type.  When omitted, fires a generic ``test`` event for backward
     compatibility.
     """
-    result = await db.execute(select(Webhook).where(Webhook.id == webhook_id))
+    result = await db.execute(select(Webhook).where(Webhook.id == webhook_id, Webhook.org_id == org_id))
     wh = result.scalar_one_or_none()
     if not wh:
         raise HTTPException(404, "Webhook not found")
@@ -267,6 +282,7 @@ async def test_webhook_with_event(
     webhook_id: int,
     payload: _TestWebhookEvent,
     db: AsyncSession = Depends(get_db),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Fire a simulated event with realistic sample data to a specific webhook.
 
@@ -275,7 +291,7 @@ async def test_webhook_with_event(
     """
     if payload.event not in WEBHOOK_EVENT_TYPES:
         raise HTTPException(400, f"Unknown event type: {payload.event}")
-    result = await db.execute(select(Webhook).where(Webhook.id == webhook_id))
+    result = await db.execute(select(Webhook).where(Webhook.id == webhook_id, Webhook.org_id == org_id))
     wh = result.scalar_one_or_none()
     if not wh:
         raise HTTPException(404, "Webhook not found")
@@ -462,19 +478,19 @@ async def get_mcp_setup(request: Request):
     # Cursor/Windows: avoid spaces in --header value; put secret in env (mcp-remote expands ${VAR}).
     cursor_fragment = {
         "mcpServers": {
-            "quickly-leads": {
+            "devoutreach-leads": {
                 "command": "npx",
                 "args": [
                     "-y",
                     "mcp-remote",
                     mcp_http_url,
                     "--header",
-                    "X-API-Key:${QUICKLY_MCP_API_KEY}",
+                    "X-API-Key:${DEVOUTREACH_MCP_API_KEY}",
                     "--transport",
                     "http-only",
                 ],
                 "env": {
-                    "QUICKLY_MCP_API_KEY": "__PASTE_API_KEY_FROM_SETTINGS__",
+                    "DEVOUTREACH_MCP_API_KEY": "__PASTE_API_KEY_FROM_SETTINGS__",
                 },
             }
         }
@@ -1208,3 +1224,110 @@ async def test_custom_email_verification(
 
     return {"results": results}
 
+
+
+# ── Campaign Mode Codes ────────────────────────────────────────────────────────
+
+@router.get("/campaign-mode-codes")
+async def get_campaign_mode_codes(db: AsyncSession = Depends(get_db)):
+    """Return the 3 global campaign mode codes."""
+    """Return the 3 global campaign mode codes."""
+    from sqlalchemy import select as _sel
+    from app.models import AppSetting
+    rows = await db.execute(_sel(AppSetting).where(AppSetting.key.in_(["campaign_code_manual","campaign_code_semi_manual","campaign_code_full_ai"])))
+    data = {r.key: r.value for r in rows.scalars().all()}
+    return {
+        "manual":      data.get("campaign_code_manual", "MANU-2024"),
+        "semi_manual": data.get("campaign_code_semi_manual", "SEMI-2024"),
+        "full_ai":     data.get("campaign_code_full_ai", "FULL-2024"),
+    }
+
+@router.post("/campaign-mode-codes")
+async def save_campaign_mode_codes(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_admin),
+):
+    """Save the 3 global campaign mode codes (admin only)."""
+    from app.settings_manager import update_setting
+    if "manual" in data:
+        await update_setting(db, "campaign_code_manual", str(data["manual"]).strip().upper())
+    if "semi_manual" in data:
+        await update_setting(db, "campaign_code_semi_manual", str(data["semi_manual"]).strip().upper())
+    if "full_ai" in data:
+        await update_setting(db, "campaign_code_full_ai", str(data["full_ai"]).strip().upper())
+    await db.commit()
+    return {"ok": True}
+
+@router.get("/full-ai-reply-settings")
+async def get_full_ai_reply_settings(db: AsyncSession = Depends(get_db)):
+    """Return Full AI reply auto-send settings."""
+    from sqlalchemy import select as _sel
+    from app.models import AppSetting
+    rows = await db.execute(_sel(AppSetting).where(AppSetting.key.in_(
+        ["full_ai_auto_send_enabled", "full_ai_daily_reply_cap"]
+    )))
+    data = {r.key: r.value for r in rows.scalars().all()}
+    return {
+        "auto_send_enabled": data.get("full_ai_auto_send_enabled", "false").lower() == "true",
+        "daily_reply_cap": int(data.get("full_ai_daily_reply_cap", "20") or 20),
+    }
+
+
+@router.post("/full-ai-reply-settings")
+async def save_full_ai_reply_settings(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_admin),
+):
+    """Save Full AI reply auto-send settings (admin only)."""
+    from app.settings_manager import update_setting
+    if "auto_send_enabled" in data:
+        await update_setting(db, "full_ai_auto_send_enabled", "true" if data["auto_send_enabled"] else "false")
+    if "daily_reply_cap" in data:
+        cap = max(1, min(500, int(data["daily_reply_cap"])))
+        await update_setting(db, "full_ai_daily_reply_cap", str(cap))
+    await db.commit()
+    return {"ok": True}
+
+# ---------------------------------------------------------------------------
+# POST /api/settings/activate-mode
+# ---------------------------------------------------------------------------
+MODE_FEATURES = {
+    "manual":      [],
+    "semi_manual": ["reply_classifier", "reply_draft"],
+    "full_ai":     ["reply_classifier", "reply_draft", "deep_personalization", "sequence_generator"],
+}
+
+@router.post("/activate-mode")
+async def activate_campaign_mode(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Enable or disable all AI features associated with a campaign mode.
+    
+    When a mode is activated, all its required AI features are enabled.
+    When deactivated, those features are disabled (unless shared with another active mode).
+    """
+    mode = data.get("mode")
+    active = bool(data.get("active", True))
+    
+    if mode not in MODE_FEATURES:
+        raise HTTPException(400, f"Unknown mode: {mode}. Choose from: {list(MODE_FEATURES.keys())}")
+    
+    from app.settings_manager import save_setting_to_db
+    
+    features_to_toggle = MODE_FEATURES[mode]
+    
+    for feature_id in features_to_toggle:
+        prefix = f"ai_{feature_id}_"
+        await save_setting_to_db(db, f"{prefix}enabled", "true" if active else "false")
+    
+    await db.commit()
+    
+    return {
+        "ok": True,
+        "mode": mode,
+        "active": active,
+        "features_updated": features_to_toggle,
+    }

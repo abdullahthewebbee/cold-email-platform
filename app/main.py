@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from app.mcp_server import router as mcp_router
 import asyncio
 import urllib.parse as _urlparse
 
@@ -27,6 +28,11 @@ from app.client_ip import client_ip_from_request
 from app.database import init_db, db_url
 from app.settings_manager import settings
 from app.routers import inbox, leads, campaigns, test_mode
+from app.routers import sequence_tree
+from app.routers import full_ai_drafts
+from app.routers import credits as credits_router
+from app.routers import suppression
+from app.routers import feedback
 from app.routers import gmail_oauth
 from app.routers import office365_oauth
 from app.routers import office365_webhook as office365_webhook_router
@@ -41,9 +47,14 @@ from app.routers import app_oauth as app_oauth_router
 from app.routers import notifications as notifications_router
 from app.routers import system_health as system_health_router
 from app.routers import analytics as analytics_router
-from app.routers import analytics as analytics_router
 from app.routers import dns_doctor as dns_doctor_router
-from app.jobs import run_send_job, run_slot_scan_job, last_send_job_run, last_send_job_sent_count
+from app.routers import content_risk as content_risk_router
+from app.routers import done_for_you as done_for_you_router
+from app.routers import visitors as visitors_router
+from app.routers.billing import router as billing_router
+from app.routers.audit_log import router as audit_log_router
+from app.jobs import run_send_job, run_slot_scan_job, last_send_job_run, last_send_job_sent_count, run_full_ai_job
+
 from app.unibox import queue_sync_for_all_inboxes, run_unibox_sync_job
 from app import time as time_provider
 import app.scheduler as scheduler_mod
@@ -139,6 +150,15 @@ async def lifespan(app: FastAPI):
             replace_existing=True,
             max_instances=1,
         )
+        schedule.add_job(
+            run_full_ai_job,
+            "interval",
+            minutes=5,
+            id="full_ai_draft",
+            replace_existing=True,
+            max_instances=1,
+        )
+
         schedule.start()
 
         from app.backup_schedule import register_scheduled_backup_from_db
@@ -179,16 +199,22 @@ async def lifespan(app: FastAPI):
 
         schedule.shutdown()
 
-
-app = FastAPI(title="Emissary", lifespan=lifespan)
-
+import os
+_is_production = os.environ.get("QUICKLY_MODE", "development").lower() == "production"
+app = FastAPI(
+    title="Emissary",
+    lifespan=lifespan,
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+)
 # ---------------------------------------------------------------------------
 # Security middleware (CSP, HSTS, X-Frame-Options, …)
 # ---------------------------------------------------------------------------
 from app.security import SecurityHeadersMiddleware  # noqa: E402
 
 app.add_middleware(SecurityHeadersMiddleware)
-
+app.include_router(mcp_router, prefix="/api")
 # ---------------------------------------------------------------------------
 # CORS – configurable from environment, defaults to localhost dev setup.
 # ---------------------------------------------------------------------------
@@ -219,16 +245,10 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Rate limiting – 200 req/min per IP by default on all routes
 # ---------------------------------------------------------------------------
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from app.rate_limit import limiter  # shared instance — Redis-backed when REDIS_HOST is set
 
-
-def _get_real_ip(request: Request) -> str:
-    """Rate-limit key: client IP via common proxy/CDN headers, else the socket."""
-    return client_ip_from_request(request) or "unknown"
-
-
-limiter = Limiter(key_func=_get_real_ip, default_limits=["200/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -247,8 +267,9 @@ app.include_router(app_oauth_router.router)
 # Protected routers – all require authentication
 # ---------------------------------------------------------------------------
 from app.auth import get_current_user as _auth_dep
+from app.auth import require_write_access as _write_dep
 
-_auth_deps = [Depends(_auth_dep)]
+_auth_deps = [Depends(_write_dep)]
 
 # Gmail / Office365 OAuth: status is public; other routes set auth per-endpoint (see routers).
 # Callback routes are public – the provider's redirect carries no auth cookie.
@@ -260,6 +281,11 @@ _auth_deps = [Depends(_auth_dep)]
 app.include_router(inbox.router, dependencies=_auth_deps)
 app.include_router(leads.router, dependencies=_auth_deps)
 app.include_router(campaigns.router, dependencies=_auth_deps)
+app.include_router(sequence_tree.router, dependencies=_auth_deps)
+app.include_router(full_ai_drafts.router, dependencies=_auth_deps)
+app.include_router(credits_router.router, dependencies=_auth_deps)
+app.include_router(suppression.router, dependencies=_auth_deps)
+app.include_router(feedback.router, dependencies=_auth_deps)
 app.include_router(test_mode.router, dependencies=_auth_deps)
 app.include_router(gmail_oauth.router)
 app.include_router(gmail_oauth.callback_router)
@@ -275,8 +301,13 @@ app.include_router(beacon_ingest_router.router)
 app.include_router(notifications_router.router, dependencies=_auth_deps)
 app.include_router(system_health_router.router, dependencies=_auth_deps)
 app.include_router(analytics_router.router, dependencies=_auth_deps)
-app.include_router(analytics_router.router, dependencies=_auth_deps)
 app.include_router(dns_doctor_router.router, dependencies=_auth_deps)
+app.include_router(content_risk_router.router, dependencies=_auth_deps)
+app.include_router(billing_router)
+app.include_router(audit_log_router, dependencies=_auth_deps)
+app.include_router(done_for_you_router.router, dependencies=_auth_deps)
+app.include_router(visitors_router.router, dependencies=_auth_deps)
+app.include_router(visitors_router.public_router)  # public: pixel.js + collect (called from customer sites)
 # lightweight public utility for MX-based provider detection
 app.include_router(email_provider_router.router)
 
@@ -296,6 +327,10 @@ app.mount(
 
 if (BASE_DIR / "static").exists():
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+# Marketing site (separate from the app — dashboard stays at "/")
+if (BASE_DIR / "site").exists():
+    app.mount("/site", StaticFiles(directory=str(BASE_DIR / "site"), html=True), name="marketing_site")
 
 @app.get("/api/status")
 async def api_status(request: Request, user=Depends(_auth_dep)):

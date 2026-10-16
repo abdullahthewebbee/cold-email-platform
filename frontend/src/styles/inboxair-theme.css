@@ -1,0 +1,113 @@
+/* ═══════════════════════════════════════════════════════════════
+   InboxAir — token bridge to the Aegis design system
+   Load AFTER aegis.css. Names shared with Aegis (--bg, --border, --gold,
+   --gold-dark, --gold-light, --text, --font-*) are NOT redefined here:
+   they come straight from aegis.css. This file only maps InboxAir's own
+   token names and the legacy --do-* aliases onto Aegis tokens, so every
+   existing page takes the Aegis look without markup changes.
+   Light only (Aegis). data-theme="dark" is intentionally a no-op.
+   ═══════════════════════════════════════════════════════════════ */
+:root, :root[data-theme="dark"], :root[data-theme="light"] {
+  color-scheme: light;
+
+  /* InboxAir names → Aegis */
+  --bg-surface:    var(--surface);
+  --bg-elevated:   var(--surface);
+  --bg-input:      var(--surface);
+  --border-active: var(--soft-gold);
+  --gold-dim:      var(--badge-bg-gold);
+  --gold-hover:    var(--surface-2);
+  --accent:        var(--gold-dark);
+  --accent-dark:   var(--gold-dark);
+  --accent-light:  var(--gold);
+  --accent-dim:    var(--badge-bg-gold);
+  --white:         var(--text-inverted);
+  --on-gold:       var(--text-inverted);
+  --text-muted:    var(--text-3);
+  --text-dim:      var(--text-4);
+  --success:       var(--green-dark);
+  --warning:       var(--orange-dark);
+  --danger:        var(--red);
+  --info:          var(--blue-dark);
+  --success-dim:   var(--green-light);
+  --warning-dim:   var(--orange-light);
+  --danger-dim:    var(--red-light);
+  --info-dim:      var(--blue-light);
+  --success-line:  var(--fade-green);
+  --warning-line:  var(--fade-orange);
+  --danger-line:   var(--fade-red);
+  --info-line:     var(--fade-blue);
+  --overlay:       var(--modal-overlay-bg);
+  --shadow-pop:    var(--shadow-lg);
+  --font-display:  var(--font-serif);
+  --font-ui:       var(--font-sans);
+  --do-date-icon-filter: none;
+
+  /* Chart series (read by utils/chartTheme.js) */
+  --chart-sent:           var(--text-4);
+  --chart-opened:         var(--gold-dark);
+  --chart-opened-unique:  var(--gold);
+  --chart-clicked:        var(--blue);
+  --chart-clicked-unique: var(--blue-dark);
+  --chart-replied:        var(--green);
+  --chart-bounced:        var(--red);
+
+  /* Legacy --do-* → Aegis */
+  --do-bg:           var(--bg);
+  --do-surface:      var(--surface);
+  --do-surf2:        var(--surface-2);
+  --do-surf3:        var(--surface-3);
+  --do-surf4:        var(--surface-4);
+  --do-cream:        var(--surface-2);
+  --do-hover:        var(--surface-2);
+  --do-border:       var(--border);
+  --do-border-dark:  var(--border-dark);
+  --do-text:         var(--text);
+  --do-text2:        var(--text-2);
+  --do-text3:        var(--text-3);
+  --do-text4:        var(--text-4);
+  --do-text-muted:   var(--text-3);
+  --do-gold:         var(--gold);
+  --do-gold-dark:    var(--gold-dark);
+  --do-gold-bg:      var(--badge-bg-gold);
+  --do-gold-border:  var(--badge-border-gold);
+  --do-ring:         var(--gold);
+  --do-icon-gold:    var(--icon-bg-gold);
+  --do-icon-blue:    var(--icon-bg-blue);
+  --do-icon-green:   var(--icon-bg-green);
+  --do-icon-orange:  var(--icon-bg-orange);
+  --do-icon-purple:  var(--icon-bg-purple);
+  --do-blue:         var(--blue);
+  --do-blue-dark:    var(--blue-dark);
+  --do-blue-light:   var(--blue-light);
+  --do-orange:       var(--orange);
+  --do-orange-light: var(--orange-light);
+  --do-orange-dark:  var(--orange-dark);
+  --do-green:        var(--green);
+  --do-green-light:  var(--green-light);
+  --do-green-dark:   var(--green-dark);
+  --do-red:          var(--red);
+  --do-red-light:    var(--red-light);
+  --do-red-dark:     var(--red-dark);
+  --do-g-from:       var(--gold-dark);
+  --do-g-to:         var(--gold);
+  --do-font-sans:    var(--font-sans);
+  --do-font-serif:   var(--font-serif);
+  --do-font-mono:    var(--font-mono);
+  --do-r-xs: var(--radius-xs); --do-r-sm: var(--radius-sm); --do-r: var(--radius);
+  --do-r-lg: var(--radius-lg); --do-r-xl: var(--radius-xl); --do-r-full: var(--radius-full);
+  --do-shadow-xs:   var(--shadow-xs);
+  --do-shadow-sm:   var(--shadow-sm);
+  --do-shadow:      var(--shadow);
+  --do-shadow-lg:   var(--shadow-lg);
+  --do-shadow-gold: var(--shadow-gold);
+
+  /* Compact shell (Aegis defaults are 260px / 72px) */
+  --sidebar-width:           17rem;
+  --sidebar-collapsed-width: 4.75rem;
+}
+
+/* ── Base ── */
+html, body { background: var(--bg); color: var(--text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+body { font-size: 14px; line-height: 1.6; }
+h1, h2, h3 { font-family: var(--font-serif); }

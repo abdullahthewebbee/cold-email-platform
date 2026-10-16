@@ -1,0 +1,160 @@
+/* ═══════════════════════════════════════════════════════════════
+   InboxAir — "Clean" skin  (load LAST)
+   Applies to every page EXCEPT Analytics (Layout.jsx adds `.ref-skin`
+   to .main-content on all other routes, so the Dashboard is untouched).
+
+   Language (from the reference): flat white surfaces, 1px hairlines,
+   no shadows, 12px cards / 10px controls, Inter everywhere, quiet
+   page headers (no banner box), underline tabs, uppercase micro-labels,
+   black primary action, soft grey hovers.
+   ═══════════════════════════════════════════════════════════════ */
+
+.ref-skin {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #fafafa;
+  --surface-3: #f2f2f3;
+  --border: #e9e9ec;
+  --border-dark: #dcdce0;
+  --text: #17171a;
+  --text-2: #3f3f46;
+  --text-3: #71717a;
+  --text-muted: #71717a;
+  --gold-dim: #f4f4f5;
+  --ref-radius: 12px;
+  --ref-ctl: 10px;
+  --ref-accent: #17171a;
+  background: var(--bg) !important;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.ref-skin .page-body { padding: 24px 32px 40px !important; }
+
+/* ── Typography: sans only ─────────────────────────────────── */
+.ref-skin h1, .ref-skin h2, .ref-skin h3, .ref-skin h4,
+.ref-skin .do-hero-title, .ref-skin .cd-hero-title, .ref-skin .st-hero-title,
+.ref-skin .page-hero-title, .ref-skin .card-title, .ref-skin .do-card-title {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  letter-spacing: -0.015em !important;
+  color: var(--text) !important;
+}
+
+/* ── Page header: no banner, just title + actions ──────────── */
+.ref-skin .do-hero, .ref-skin .cd-hero, .ref-skin .st-hero, .ref-skin .hero-banner, .ref-skin .hero-banner.is-quiet {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 0 20px !important;
+  margin: 0 !important;
+}
+.ref-skin .do-hero::before, .ref-skin .cd-hero::before, .ref-skin .hero-banner::before,
+.ref-skin .hero-banner.is-quiet::before, .ref-skin .do-hero::after, .ref-skin .cd-hero::after { display: none !important; content: none !important; }
+.ref-skin .do-hero-title, .ref-skin .cd-hero-title, .ref-skin .st-hero-title,
+.ref-skin .hero-banner.is-quiet .page-hero-title {
+  font-size: 22px !important; font-weight: 600 !important; line-height: 1.25 !important; margin: 0 0 4px !important;
+}
+.ref-skin .do-hero-eyebrow, .ref-skin .st-hero-eyebrow, .ref-skin .hero-banner.is-quiet .page-hero-eyebrow {
+  font-size: 10.5px !important; font-weight: 600 !important; letter-spacing: .08em !important;
+  color: var(--text-3) !important; margin-bottom: 6px !important;
+}
+.ref-skin .do-hero-sub, .ref-skin .hero-banner.is-quiet .page-hero-sub { font-size: 13px !important; color: var(--text-3) !important; max-width: 640px; }
+.ref-skin .hero-banner .page-hero-icon, .ref-skin .do-hero-icon { display: none !important; }
+.ref-skin .do-hero-actions { margin: 14px 0 0 !important; gap: 8px !important; }
+
+/* ── Surfaces ──────────────────────────────────────────────── */
+.ref-skin .do-card, .ref-skin .do-chartcard, .ref-skin .card, .ref-skin .cd-card {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--ref-radius) !important;
+  box-shadow: none !important;
+}
+.ref-skin .do-card-head, .ref-skin .card-header {
+  background: transparent !important; border-bottom: 1px solid var(--border) !important; padding: 14px 18px !important;
+}
+.ref-skin .do-card-title, .ref-skin .card-title { font-size: 14px !important; font-weight: 600 !important; }
+.ref-skin .do-card-body, .ref-skin .card-body { padding: 16px 18px !important; }
+
+.ref-skin .do-stat-chip, .ref-skin .stat-chip {
+  background: var(--surface) !important; border: 1px solid var(--border) !important;
+  border-radius: var(--ref-radius) !important; box-shadow: none !important;
+}
+.ref-skin .do-stat-chip:hover, .ref-skin .stat-chip:hover { border-color: var(--border-dark) !important; transform: none !important; box-shadow: none !important; }
+.ref-skin .do-stat-icon, .ref-skin .stat-chip-icon { background: var(--surface-3) !important; color: var(--text-2) !important; border-radius: 8px !important; }
+.ref-skin .do-stat-val, .ref-skin .stat-chip-value { font-family: 'Inter', sans-serif !important; font-weight: 600 !important; color: var(--text) !important; }
+.ref-skin .do-stat-label, .ref-skin .stat-chip-label { text-transform: uppercase; font-size: 10.5px !important; letter-spacing: .06em; color: var(--text-3) !important; }
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.ref-skin .do-btn-gold, .ref-skin .do-btn-hero, .ref-skin .btn-primary, .ref-skin .btn-gold, .ref-skin .btn-hero-solid {
+  background: var(--ref-accent) !important; color: #fff !important; border: 1px solid var(--ref-accent) !important;
+  border-radius: var(--ref-ctl) !important; box-shadow: none !important; font-weight: 500 !important; font-size: 13px !important;
+  min-height: 36px; transition: background .12s, border-color .12s;
+}
+.ref-skin .do-btn-gold:hover:not(:disabled), .ref-skin .do-btn-hero:hover, .ref-skin .btn-primary:hover, .ref-skin .btn-gold:hover, .ref-skin .btn-hero-solid:hover {
+  background: #2e2e33 !important; border-color: #2e2e33 !important; text-decoration: none !important;
+}
+.ref-skin .do-btn-outline, .ref-skin .do-btn-hero-outline, .ref-skin .btn-outline, .ref-skin .btn-ghost, .ref-skin .btn-hero-ghost, .ref-skin .btn-gold-outline {
+  background: var(--surface) !important; color: var(--text-2) !important; border: 1px solid var(--border-dark) !important;
+  border-radius: var(--ref-ctl) !important; box-shadow: none !important; font-weight: 500 !important; font-size: 13px !important; min-height: 36px;
+}
+.ref-skin .do-btn-outline:hover:not(:disabled), .ref-skin .do-btn-hero-outline:hover, .ref-skin .btn-outline:hover, .ref-skin .btn-ghost:hover, .ref-skin .btn-hero-ghost:hover {
+  background: var(--surface-3) !important; color: var(--text) !important; border-color: var(--border-dark) !important; text-decoration: none !important;
+}
+.ref-skin button:focus-visible, .ref-skin a:focus-visible { outline: 2px solid rgba(23,23,26,.18) !important; outline-offset: 2px; }
+
+/* ── Inputs ────────────────────────────────────────────────── */
+.ref-skin input:not([type=checkbox]):not([type=radio]):not([type=range]),
+.ref-skin select, .ref-skin textarea {
+  background: var(--surface) !important; border: 1px solid var(--border-dark) !important;
+  border-radius: var(--ref-ctl) !important; color: var(--text) !important; box-shadow: none !important; font-size: 13px;
+}
+.ref-skin input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), .ref-skin select { min-height: 38px; }
+.ref-skin input::placeholder, .ref-skin textarea::placeholder { color: #a1a1aa !important; }
+.ref-skin input:focus, .ref-skin select:focus, .ref-skin textarea:focus {
+  border-color: #17171a !important; box-shadow: 0 0 0 3px rgba(23,23,26,.07) !important; outline: none !important;
+}
+.ref-skin label { color: var(--text-2); }
+
+/* ── Tables ────────────────────────────────────────────────── */
+.ref-skin .do-tbl th, .ref-skin .tm-table th, .ref-skin .table th, .ref-skin table th {
+  background: transparent !important; color: var(--text-3) !important; font-size: 10.5px !important; font-weight: 600 !important;
+  letter-spacing: .06em; text-transform: uppercase; border-bottom: 1px solid var(--border) !important; padding: 10px 14px !important;
+}
+.ref-skin .do-tbl td, .ref-skin .tm-table td, .ref-skin .table td, .ref-skin table td {
+  border-bottom: 1px solid var(--border) !important; padding: 12px 14px !important; font-size: 13px;
+}
+.ref-skin table tbody tr:hover { background: var(--surface-2) !important; }
+.ref-skin table tbody tr:last-child td { border-bottom: 0 !important; }
+
+/* ── Tabs (underline) ──────────────────────────────────────── */
+.ref-skin .tabs, .ref-skin .tab-bar, .ref-skin [role=tablist] {
+  border-bottom: 1px solid var(--border) !important; background: transparent !important; gap: 4px; box-shadow: none !important;
+}
+.ref-skin .tab, .ref-skin [role=tab] {
+  background: transparent !important; border: 0 !important; border-bottom: 2px solid transparent !important; border-radius: 0 !important;
+  color: var(--text-3) !important; font-weight: 500 !important; padding: 10px 12px !important; box-shadow: none !important;
+}
+.ref-skin .tab:hover, .ref-skin [role=tab]:hover { color: var(--text) !important; background: transparent !important; }
+.ref-skin .tab.active, .ref-skin [role=tab][aria-selected=true] { color: var(--text) !important; border-bottom-color: var(--text) !important; }
+
+/* ── Badges / pills: quiet ─────────────────────────────────── */
+.ref-skin .badge { border-radius: 999px !important; font-weight: 500 !important; font-size: 11px !important; border-width: 1px !important; }
+.ref-skin .badge-gold { background: var(--surface-3) !important; color: var(--text-2) !important; border-color: var(--border-dark) !important; }
+.ref-skin .do-preset-pill { border-radius: 999px !important; background: var(--surface) !important; border: 1px solid var(--border-dark) !important; color: var(--text-2) !important; box-shadow: none !important; }
+.ref-skin .do-preset-pill.active, .ref-skin .do-preset-pill[aria-pressed=true] { background: var(--text) !important; color: #fff !important; border-color: var(--text) !important; }
+
+/* ── Modals ────────────────────────────────────────────────── */
+.ref-skin [class*="modal"] > div, .ref-skin [role=dialog] { border-radius: 14px !important; box-shadow: 0 12px 40px rgba(0,0,0,.12) !important; border: 1px solid var(--border) !important; }
+
+/* ── Scrollbars ────────────────────────────────────────────── */
+.ref-skin ::-webkit-scrollbar { width: 8px; height: 8px; }
+.ref-skin ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 8px; }
+.ref-skin ::-webkit-scrollbar-track { background: transparent; }
+
+@media (max-width: 768px) { .ref-skin .page-body { padding: 16px 14px 32px !important; } }
+
+/* ═══════════════ Sidebar (shared shell — quieter) ═══════════════ */
+.sidebar { background: #ffffff !important; border-right: 1px solid #e9e9ec !important; box-shadow: none !important; }
+.sidebar .nav-item { border-radius: 10px; margin: 1px 10px; padding-left: 10px; color: #52525b; }
+.sidebar .nav-item:hover { background: #f4f4f5 !important; color: #17171a; }
+.sidebar .nav-item.active { background: #f4f4f5 !important; color: #17171a; font-weight: 600; }
+.sidebar .nav-item.active .nav-icon { background: transparent !important; color: #17171a !important; }

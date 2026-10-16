@@ -25,3 +25,8 @@ cryptography>=41.0
 slowapi>=0.1.9
 dnspython>=2.8
 mcp>=1.2
+openpyxl>=3.1.0
+checkdmarc
+dkimpy
+
+arq

@@ -3,7 +3,6 @@
 # // Any changes to tracking behavior, event types, metadata collected, or URL structure
 # // must also be reflected in the Beacon service (/beacon or the separate Beacon repo).
 # // If you are an AI agent, add a TODO at the end of your response listing what needs to be updated in Beacon.
-
 import asyncio
 import logging
 import random
@@ -20,6 +19,7 @@ except ImportError:
     ZoneInfo = None  # type: ignore[assignment,misc]
 
 from app.settings_manager import settings
+from app.ai_classifier import generate_personalized_email
 from app.database import AsyncSessionLocal
 from app.models import (
     QueueSlot,
@@ -27,6 +27,8 @@ from app.models import (
     Campaign,
     Sequence,
     SequenceVariant,
+    SequenceNode,
+    SequenceEdge,
     Lead,
     Inbox,
     EmailLog,
@@ -37,6 +39,7 @@ from app.models import (
     GmailMessage,
     Office365Message,
     CustomEmailOverride,
+    BounceEvent,
 )
 from app.sender import send_email, render_body, get_lead_data, SendResult, SendFailure, build_quote_html, build_quote_plain, _plain_to_quoted_html, _strip_html_tags
 from app.webhooks import fire_webhook_event
@@ -91,6 +94,70 @@ def _in_sending_window(now_utc: datetime, campaign: Campaign) -> bool:
     start = _parse_time(campaign.sending_hours_start or "09:00")
     end = _parse_time(campaign.sending_hours_end or "17:00")
     return start <= now_local.time() <= end
+
+
+async def resolve_inbox_send_credentials(session: AsyncSession, inbox: "Inbox") -> dict:
+    """Resolve per-inbox Gmail/Office365 send credentials.
+
+    Extracted from the duplicated logic in run_send_job and send_slot_job so
+    a third caller (Full AI reply auto-send) can reuse it without a third
+    copy. Does NOT fetch OAuth app-level credentials (client_id/secret) --
+    callers already do that once per function, since it is not inbox-specific.
+
+    Returns a dict with keys:
+        gmail_token (str), ga (GmailAccount|None), o365_account (Office365Account|None),
+        simulate_send (bool), ok (bool)
+
+    ok=False means no usable account was found for this inbox and test_mode
+    simulation does not apply either -- the caller should treat this as
+    "cannot send from this inbox" and decide its own fallback (skip, retry,
+    or fall back to a draft for human review).
+    """
+    gmail_token = ""
+    ga = None
+    o365_account = None
+    simulate_send = False
+    ok = True
+
+    if inbox.provider == "office365":
+        o365_res = await session.execute(
+            select(Office365Account).where(Office365Account.inbox_id == inbox.id)
+        )
+        o365_account = o365_res.scalar_one_or_none()
+        if not o365_account:
+            log.warning(
+                "resolve_inbox_send_credentials: Office 365 inbox %s (%s) has no Office365Account",
+                inbox.id, inbox.email,
+            )
+            ok = False
+    else:
+        ga_result = await session.execute(
+            select(GmailAccount).where(GmailAccount.inbox_id == inbox.id)
+        )
+        ga = ga_result.scalar_one_or_none()
+        if ga:
+            gmail_token = ga.access_token
+        else:
+            if settings.test_mode:
+                log.info(
+                    "resolve_inbox_send_credentials: test mode, Gmail inbox %s (%s) has no GmailAccount -- simulating send",
+                    inbox.id, inbox.email,
+                )
+                simulate_send = True
+            else:
+                log.warning(
+                    "resolve_inbox_send_credentials: Gmail inbox %s (%s) has no GmailAccount",
+                    inbox.id, inbox.email,
+                )
+                ok = False
+
+    return {
+        "gmail_token": gmail_token,
+        "ga": ga,
+        "o365_account": o365_account,
+        "simulate_send": simulate_send,
+        "ok": ok,
+    }
 
 
 async def run_send_job():
@@ -200,40 +267,13 @@ async def run_send_job():
                 continue
 
             # ── Fetch provider-specific credentials ──────────────────────
-            gmail_token = ""
-            ga = None
-            o365_account = None
-            simulate_send = False
-
-            if inbox.provider == "office365":
-                o365_res = await session.execute(
-                    select(Office365Account).where(Office365Account.inbox_id == inbox.id)
-                )
-                o365_account = o365_res.scalar_one_or_none()
-                if o365_account:
-                    pass
-                else:
-                    log.warning("Office 365 inbox %s (%s) has no Office365Account — skipping", inbox.id, inbox.email)
-                    continue
-            else:
-                # Default: Gmail
-                ga_result = await session.execute(
-                    select(GmailAccount).where(GmailAccount.inbox_id == inbox.id)
-                )
-                ga = ga_result.scalar_one_or_none()
-                if ga:
-                    gmail_token = ga.access_token
-                else:
-                    if settings.test_mode:
-                        log.info(
-                            "Test mode: Gmail inbox %s (%s) has no GmailAccount -- simulating send",
-                            inbox.id,
-                            inbox.email,
-                        )
-                        simulate_send = True
-                    else:
-                        log.warning("Gmail inbox %s (%s) has no GmailAccount — skipping", inbox.id, inbox.email)
-                        continue
+            _creds = await resolve_inbox_send_credentials(session, inbox)
+            gmail_token = _creds["gmail_token"]
+            ga = _creds["ga"]
+            o365_account = _creds["o365_account"]
+            simulate_send = _creds["simulate_send"]
+            if not _creds["ok"]:
+                continue
 
             sent_this_inbox = 0
             # Use the warmup-aware effective limit as the per-inbox rate cap.
@@ -630,6 +670,12 @@ async def run_send_job():
                 from_name = inbox.display_name or ""
 
                 # ── phase 1: pre-create EmailLog to get an ID for tracking ──
+                from app.send_diagnostics import snapshot_auth_status
+                from app.content_risk import score_content
+                _send_domain = (from_addr.split("@")[-1] if "@" in from_addr else "")
+                _auth_snapshot = await snapshot_auth_status(_send_domain)
+                _content_risk = score_content(subject, body)
+
                 email_log_entry = EmailLog(
                     lead_id=lead.id,
                     campaign_id=campaign.id,
@@ -640,6 +686,9 @@ async def run_send_job():
                     format_override=format_override,
                     message_id="",      # filled in after successful send
                     thread_id=prev_thread_id,
+                    auth_snapshot=_auth_snapshot,
+                    content_risk_score=_content_risk["score"],
+                    content_risk_flags=_content_risk["flags"],
                 )
                 session.add(email_log_entry)
                 await session.flush()  # acquire email_log_entry.id
@@ -742,6 +791,11 @@ async def run_send_job():
                         office365_client_id=o365_client_id,
                         office365_client_secret=o365_client_secret,
                         office365_tenant_id=o365_tenant_id,
+                        smtp_host=inbox.smtp_host or "",
+                        smtp_port=inbox.smtp_port,
+                        smtp_username=inbox.smtp_username or "",
+                        smtp_password=inbox.smtp_password or "",
+                        smtp_encryption=inbox.smtp_encryption or "starttls",
                         conversation_id=prev_thread_id if inbox.provider == "office365" else None,
                         reply_graph_message_id=reply_graph_message_id if inbox.provider == "office365" else None,
                     )
@@ -759,6 +813,14 @@ async def run_send_job():
                     if result.error_type in ("bounce", "invalid_recipient"):
                         prev_enr = getattr(cl, "enrollment_status", None) or "active"
                         cl.enrollment_status = "bounced"
+                        cl.bounce_type = result.bounce_type or "hard"
+                        session.add(BounceEvent(
+                            lead_id=lead.id,
+                            campaign_id=campaign.id,
+                            inbox_id=inbox.id,
+                            bounce_type=result.bounce_type or "hard",
+                            error_message=result.message,
+                        ))
                         # Delete ALL remaining queue slots for this lead+campaign
                         from sqlalchemy import delete as sql_delete
                         await session.execute(
@@ -772,6 +834,7 @@ async def run_send_job():
                             "campaign_id": campaign.id,
                             "inbox_id": inbox.id,
                             "error_type": result.error_type,
+                            "bounce_type": cl.bounce_type,
                             "error_message": result.message,
                             "timestamp": time_provider.utcnow().isoformat() + "Z",
                         })
@@ -953,7 +1016,7 @@ async def send_slot_job(slot_id: int) -> None:
     """
     global last_send_job_run, last_send_job_sent_count
 
-    now = time_provider.now()
+    now = time_provider.utcnow()  # must be UTC � _in_sending_window converts to campaign tz
     log.info("send_slot_job: slot_id=%d firing at %s", slot_id, now.isoformat())
 
     async with AsyncSessionLocal() as session:
@@ -967,6 +1030,7 @@ async def send_slot_job(slot_id: int) -> None:
                 Sequence,
                 (Sequence.campaign_id == Campaign.id)
                 & (Sequence.position == QueueSlot.sequence_index),
+                isouter=True,
             )
             .join(Inbox, QueueSlot.inbox_id == Inbox.id)
             .options(selectinload(Sequence.variants))
@@ -1064,124 +1128,153 @@ async def send_slot_job(slot_id: int) -> None:
                 await session.commit()
                 return
 
+
+        # -- Email verification check ------------------------------------------
+        # If verification is enabled and the lead's email is unverified,
+        # verify it now. Block send if invalid or risky.
+        _ev_status = getattr(lead, "email_verification_status", None)
+        if _ev_status not in ("valid", "catch_all"):
+            from app.app_settings import (
+                EMAIL_VERIFICATION_ENABLED, EMAIL_VERIFICATION_API_KEY,
+                EMAIL_VERIFICATION_PROVIDER, EMAIL_VERIFICATION_CUSTOM_URL,
+                EMAIL_VERIFICATION_CUSTOM_FIELD, EMAIL_VERIFICATION_CUSTOM_VALID_VALUES,
+                EMAIL_VERIFICATION_CUSTOM_INVALID_VALUES, EMAIL_VERIFICATION_CUSTOM_METHOD,
+            )
+            from app.settings_manager import get_setting_value
+            _ev_enabled = await get_setting_value(session, EMAIL_VERIFICATION_ENABLED) or "false"
+            if _ev_enabled.lower() in ("true", "1", "yes"):
+                _ev_api_key = await get_setting_value(session, EMAIL_VERIFICATION_API_KEY) or ""
+                _ev_provider = await get_setting_value(session, EMAIL_VERIFICATION_PROVIDER) or "mailtester_ninja"
+                if _ev_api_key or _ev_provider == "custom":
+                    try:
+                        from app.email_verification import verify_single, BLOCK_SEND_STATUSES
+                        if _ev_provider == "custom":
+                            from app.email_verification import CustomHttpProvider
+                            _custom_url = await get_setting_value(session, EMAIL_VERIFICATION_CUSTOM_URL) or ""
+                            _custom_field = await get_setting_value(session, EMAIL_VERIFICATION_CUSTOM_FIELD) or ""
+                            _custom_valid = (await get_setting_value(session, EMAIL_VERIFICATION_CUSTOM_VALID_VALUES) or "").split(",")
+                            _custom_invalid = (await get_setting_value(session, EMAIL_VERIFICATION_CUSTOM_INVALID_VALUES) or "").split(",")
+                            _custom_method = await get_setting_value(session, EMAIL_VERIFICATION_CUSTOM_METHOD) or "GET"
+                            _ev_provider_obj = CustomHttpProvider(_custom_url, _custom_field, _custom_valid, _custom_invalid, _custom_method)
+                            _ev_result = await _ev_provider_obj.verify(lead.email, _ev_api_key)
+                        else:
+                            _ev_result = await verify_single(lead.email, _ev_api_key, _ev_provider)
+                        lead.email_verification_status = _ev_result.status
+                        await session.flush()
+                        log.info(
+                            "send_slot_job: verified %s -> %s (slot %d)",
+                            lead.email, _ev_result.status, slot_id,
+                        )
+                        if _ev_result.status in BLOCK_SEND_STATUSES:
+                            log.info(
+                                "send_slot_job: blocking send for %s status=%s slot=%d",
+                                lead.email, _ev_result.status, slot_id,
+                            )
+                            cl.enrollment_status = "bounced"
+                            cl.bounce_type = "hard"
+                            await session.delete(slot)
+                            await session.commit()
+                            return
+                    except Exception as _ev_exc:
+                        log.warning("send_slot_job: email verification failed for %s: %s", lead.email, _ev_exc)
+                        # On verification error, allow send to proceed
+
         # ── OAuth credentials ────────────────────────────────────────────
         g_client_id, g_client_secret = await get_google_oauth_credentials(session)
         o365_client_id, o365_client_secret, o365_tenant_id = await get_office365_oauth_credentials(session)
 
-        gmail_token = ""
-        ga = None
-        o365_account = None
-        simulate_send = False
-
-        from app.settings_manager import settings as _settings
-        from app.app_settings import get_inbox_tracking_base
-        _fallback_tracking_base = _settings.base_url.rstrip("/")
-        inbox_tracking_base = get_inbox_tracking_base(inbox, _fallback_tracking_base)
-
-        if inbox.provider == "office365":
-            o365_res = await session.execute(
-                select(Office365Account).where(Office365Account.inbox_id == inbox.id)
-            )
-            o365_account = o365_res.scalar_one_or_none()
-            if o365_account:
-                pass
-            else:
-                log.warning(
-                    "send_slot_job: O365 inbox %s has no Office365Account – skipping slot %d",
-                    inbox.email, slot_id,
-                )
-                return
-        else:
-            ga_result = await session.execute(
-                select(GmailAccount).where(GmailAccount.inbox_id == inbox.id)
-            )
-            ga = ga_result.scalar_one_or_none()
-            if ga:
-                gmail_token = ga.access_token
-            else:
-                if settings.test_mode:
-                    log.info(
-                        "send_slot_job: test mode Gmail inbox %s has no GmailAccount -- simulating send",
-                        inbox.email,
-                    )
-                    simulate_send = True
-                else:
-                    log.warning(
-                        "send_slot_job: Gmail inbox %s has no GmailAccount – skipping slot %d",
-                        inbox.email, slot_id,
-                    )
-                    return
+        _creds = await resolve_inbox_send_credentials(session, inbox)
+        gmail_token = _creds["gmail_token"]
+        ga = _creds["ga"]
+        o365_account = _creds["o365_account"]
+        simulate_send = _creds["simulate_send"]
+        if not _creds["ok"]:
+            log.warning("send_slot_job: no usable send credentials for inbox %s, skipping slot %d", inbox.email, slot_id)
+            return
 
         # ── A/B variant selection ────────────────────────────────────────
         chosen_variant_id = None
-        seq_subject      = sequence.subject
-        seq_body         = sequence.body
-        seq_is_html      = sequence.is_html
-        seq_preview_text = getattr(sequence, "preview_text", None)
+        if slot.node_id is not None:
+            # Branch-tree campaign: pull content from the SequenceNode instead
+            # of a flat Sequence step. No A/B variants or personalized
+            # overrides for tree nodes in this version.
+            node_res = await session.execute(select(SequenceNode).where(SequenceNode.id == slot.node_id))
+            node = node_res.scalar_one_or_none()
+            if node is None:
+                log.warning("send_slot_job: node %s not found for slot %d, skipping", slot.node_id, slot_id)
+                return
+            seq_subject      = node.subject
+            seq_body         = node.body
+            seq_is_html      = node.is_html
+            seq_preview_text = node.preview_text
+        else:
+            seq_subject      = sequence.subject
+            seq_body         = sequence.body
+            seq_is_html      = sequence.is_html
+            seq_preview_text = getattr(sequence, "preview_text", None)
 
-        if getattr(sequence, "sequence_type", "standard") != "personalized":
-            enabled_variants = [v for v in getattr(sequence, "variants", []) if v.enabled]
-            if enabled_variants:
-                # Use the pre-assigned variant if one exists on the slot
-                chosen = None
-                if slot.variant_id is not None:
-                    chosen = next(
-                        (v for v in enabled_variants if v.id == slot.variant_id),
-                        None,
+            if getattr(sequence, "sequence_type", "standard") != "personalized":
+                enabled_variants = [v for v in getattr(sequence, "variants", []) if v.enabled]
+                if enabled_variants:
+                    # Use the pre-assigned variant if one exists on the slot
+                    chosen = None
+                    if slot.variant_id is not None:
+                        chosen = next(
+                            (v for v in enabled_variants if v.id == slot.variant_id),
+                            None,
+                        )
+                    # Fallback: random selection (legacy slots without pre-assignment)
+                    if chosen is None:
+                        options = [None] + enabled_variants
+                        chosen = random.choice(options)
+                    if chosen is not None:
+                        chosen_variant_id = chosen.id
+                        if chosen.subject is not None:
+                            seq_subject = chosen.subject
+                        if chosen.body:
+                            seq_body = chosen.body
+                        if chosen.is_html is not None:
+                            seq_is_html = chosen.is_html
+                        if chosen.preview_text is not None:
+                            seq_preview_text = chosen.preview_text
+                        log.info(
+                            "send_slot_job: A/B: slot=%s seq=%s chose variant_id=%s label=%r",
+                            slot.id, sequence.id, chosen_variant_id, chosen.label,
+                        )
+
+            # ── Personalized sequence override ───────────────────────────────
+            if getattr(sequence, "sequence_type", "standard") == "personalized":
+                ov_res = await session.execute(
+                    select(CustomEmailOverride).where(
+                        CustomEmailOverride.campaign_lead_id == cl.id,
+                        CustomEmailOverride.sequence_id == sequence.id,
                     )
-                # Fallback: random selection (legacy slots without pre-assignment)
-                if chosen is None:
-                    options = [None] + enabled_variants
-                    chosen = random.choice(options)
-                if chosen is not None:
-                    chosen_variant_id = chosen.id
-                    if chosen.subject is not None:
-                        seq_subject = chosen.subject
-                    if chosen.body:
-                        seq_body = chosen.body
-                    if chosen.is_html is not None:
-                        seq_is_html = chosen.is_html
-                    if chosen.preview_text is not None:
-                        seq_preview_text = chosen.preview_text
+                )
+                override = ov_res.scalar_one_or_none()
+                if override:
+                    if override.subject is not None:
+                        seq_subject = override.subject
+                    elif sequence.fallback_subject:
+                        seq_subject = sequence.fallback_subject
+                    if override.body is not None:
+                        seq_body = override.body
+                    elif sequence.fallback_body:
+                        seq_body = sequence.fallback_body
+                    if override.is_html is not None:
+                        seq_is_html = override.is_html
                     log.info(
-                        "send_slot_job: A/B: slot=%s seq=%s chose variant_id=%s label=%r",
-                        slot.id, sequence.id, chosen_variant_id, chosen.label,
+                        "send_slot_job: Personalized override: slot=%s seq=%s lead=%s",
+                        slot.id, sequence.id, lead.id,
                     )
-
-        # ── Personalized sequence override ───────────────────────────────
-        if getattr(sequence, "sequence_type", "standard") == "personalized":
-            ov_res = await session.execute(
-                select(CustomEmailOverride).where(
-                    CustomEmailOverride.campaign_lead_id == cl.id,
-                    CustomEmailOverride.sequence_id == sequence.id,
-                )
-            )
-            override = ov_res.scalar_one_or_none()
-            if override:
-                if override.subject is not None:
-                    seq_subject = override.subject
-                elif sequence.fallback_subject:
-                    seq_subject = sequence.fallback_subject
-                if override.body is not None:
-                    seq_body = override.body
-                elif sequence.fallback_body:
-                    seq_body = sequence.fallback_body
-                if override.is_html is not None:
-                    seq_is_html = override.is_html
-                log.info(
-                    "send_slot_job: Personalized override: slot=%s seq=%s lead=%s",
-                    slot.id, sequence.id, lead.id,
-                )
-            elif sequence.fallback_subject or sequence.fallback_body:
-                if sequence.fallback_subject:
-                    seq_subject = sequence.fallback_subject
-                if sequence.fallback_body:
-                    seq_body = sequence.fallback_body
-                log.info(
-                    "send_slot_job: Personalized fallback (no override): slot=%s seq=%s lead=%s",
-                    slot.id, sequence.id, lead.id,
-                )
-
+                elif sequence.fallback_subject or sequence.fallback_body:
+                    if sequence.fallback_subject:
+                        seq_subject = sequence.fallback_subject
+                    if sequence.fallback_body:
+                        seq_body = sequence.fallback_body
+                    log.info(
+                        "send_slot_job: Personalized fallback (no override): slot=%s seq=%s lead=%s",
+                        slot.id, sequence.id, lead.id,
+                    )
         # ── Thread / reply chain for follow-up sequences ─────────────────
         reply_to_msg_id = None
         prev_thread_id = None
@@ -1357,6 +1450,12 @@ async def send_slot_job(slot_id: int) -> None:
         from_name = inbox.display_name or ""
 
         # ── Pre-create EmailLog to get an ID for tracking ─────────────────
+        from app.send_diagnostics import snapshot_auth_status
+        from app.content_risk import score_content
+        _send_domain = (from_addr.split("@")[-1] if "@" in from_addr else "")
+        _auth_snapshot = await snapshot_auth_status(_send_domain)
+        _content_risk = score_content(subject, body)
+
         email_log_entry = EmailLog(
             lead_id=lead.id,
             campaign_id=campaign.id,
@@ -1367,6 +1466,9 @@ async def send_slot_job(slot_id: int) -> None:
             format_override=format_override,
             message_id="",
             thread_id=prev_thread_id,
+            auth_snapshot=_auth_snapshot,
+            content_risk_score=_content_risk["score"],
+            content_risk_flags=_content_risk["flags"],
         )
         session.add(email_log_entry)
         await session.flush()
@@ -1457,6 +1559,11 @@ async def send_slot_job(slot_id: int) -> None:
                 office365_client_id=o365_client_id,
                 office365_client_secret=o365_client_secret,
                 office365_tenant_id=o365_tenant_id,
+                smtp_host=inbox.smtp_host or "",
+                smtp_port=inbox.smtp_port,
+                smtp_username=inbox.smtp_username or "",
+                smtp_password=inbox.smtp_password or "",
+                smtp_encryption=inbox.smtp_encryption or "starttls",
                 conversation_id=prev_thread_id if inbox.provider == "office365" else None,
                 reply_graph_message_id=reply_graph_message_id if inbox.provider == "office365" else None,
             )
@@ -1471,6 +1578,14 @@ async def send_slot_job(slot_id: int) -> None:
             if result.error_type in ("bounce", "invalid_recipient"):
                 prev_enr = getattr(cl, "enrollment_status", None) or "active"
                 cl.enrollment_status = "bounced"
+                cl.bounce_type = result.bounce_type or "hard"
+                session.add(BounceEvent(
+                    lead_id=lead.id,
+                    campaign_id=campaign.id,
+                    inbox_id=inbox.id,
+                    bounce_type=result.bounce_type or "hard",
+                    error_message=result.message,
+                ))
                 from sqlalchemy import delete as _sql_delete
                 await session.execute(
                     _sql_delete(QueueSlot).where(QueueSlot.campaign_lead_id == cl.id)
@@ -1478,7 +1593,7 @@ async def send_slot_job(slot_id: int) -> None:
                 await fire_webhook_event(session, "email.bounced", {
                     "lead_id": lead.id, "lead_email": lead.email,
                     "campaign_id": campaign.id, "inbox_id": inbox.id,
-                    "error_type": result.error_type, "error_message": result.message,
+                    "error_type": result.error_type, "error_message": result.message, "bounce_type": cl.bounce_type,
                     "timestamp": time_provider.utcnow().isoformat() + "Z",
                 })
                 await fire_webhook_event(session, "lead.status_changed", {
@@ -1507,6 +1622,24 @@ async def send_slot_job(slot_id: int) -> None:
         email_log_entry.thread_id = result.thread_id or prev_thread_id
         await session.delete(slot)
         await _update_enrollment_after_send(session, cl, campaign, sequence)
+
+        if slot.node_id is not None:
+            edges_res = await session.execute(select(SequenceEdge).where(SequenceEdge.from_node_id == slot.node_id))
+            outgoing_edges = edges_res.scalars().all()
+            if outgoing_edges:
+                wait_days = max(e.wait_days for e in outgoing_edges)
+                if wait_days > 0:
+                    cl.node_ready_at = time_provider.utcnow() + timedelta(days=wait_days)
+                else:
+                    wait_mins = max((e.wait_minutes or 0) for e in outgoing_edges)
+                    cl.node_ready_at = time_provider.utcnow() + timedelta(minutes=max(wait_mins, 1))
+                log.info(
+                    "send_slot_job: tree node %s sent, next evaluation due %s (cl=%s)",
+                    slot.node_id, cl.node_ready_at, cl.id,
+                )
+            else:
+                cl.node_ready_at = None
+                log.info("send_slot_job: tree node %s sent, no outgoing edges — path ends (cl=%s)", slot.node_id, cl.id)
 
         if inbox.provider != "office365" and email_log_entry.thread_id:
             try:
@@ -1610,30 +1743,21 @@ async def send_slot_job(slot_id: int) -> None:
 
 # Tracks slot IDs that already have a live asyncio Task so that two
 # consecutive scans overlapping at the 60-second boundary don't double-send.
-_pending_slot_ids: set[int] = set()
-
-
-async def _dispatch_slot(slot_id: int, delay: float) -> None:
-    """Sleep for *delay* seconds then call send_slot_job.  Removes from pending set."""
-    try:
-        if delay > 0:
-            await asyncio.sleep(delay)
-        await send_slot_job(slot_id)
-    finally:
-        _pending_slot_ids.discard(slot_id)
-
-
 async def run_slot_scan_job() -> None:
-    """1-minute APScheduler job with exact-second per-slot asyncio Tasks.
+    """1-minute APScheduler job: scans for due slots and enqueues them as arq jobs.
 
-    Every minute, queries slots due within the next 60 seconds and spawns a
-    lightweight ``asyncio.Task`` per slot.  Each task sleeps until the slot's
-    exact ``scheduled_date`` then calls ``send_slot_job``.
+    Each slot is claimed via a Redis distributed lock (SET NX EX) before being
+    enqueued. This replaces the old in-process _pending_slot_ids set, making
+    dispatch safe across multiple worker replicas — no duplicate sends possible.
 
-    ``_pending_slot_ids`` prevents double-dispatch when two scan ticks see the
-    same slot inside their overlapping 60-second windows.
+    The actual send work (send_slot_job) runs in arq workers, not in the API
+    process. The scanner itself stays lightweight and in-process.
     """
-    now = time_provider.now()
+    from arq import create_pool
+    from app.workers.redis_settings import get_redis_settings
+    from app.workers.slot_lock import try_lock_slot
+
+    now = time_provider.utcnow()
     window_end = now + timedelta(seconds=60)
 
     async with AsyncSessionLocal() as session:
@@ -1647,17 +1771,382 @@ async def run_slot_scan_job() -> None:
     if not rows:
         return
 
+    redis = await create_pool(get_redis_settings())
     dispatched = 0
-    for slot_id, scheduled_date in rows:
-        if slot_id in _pending_slot_ids:
-            continue
-        delay = (scheduled_date - now).total_seconds()
-        _pending_slot_ids.add(slot_id)
-        asyncio.create_task(_dispatch_slot(slot_id, delay))
-        dispatched += 1
+    try:
+        for slot_id, scheduled_date in rows:
+            # Try to acquire distributed lock — skip if another process already claimed it
+            if not await try_lock_slot(redis, slot_id):
+                continue
+            # Enqueue to arq — _job_id dedup prevents re-queuing if already in queue
+            delay = max(0.0, (scheduled_date - now).total_seconds())
+            await redis.enqueue_job(
+                "send_slot",
+                slot_id,
+                _job_id=f"slot:{slot_id}",
+                _defer_by=delay if delay > 0 else None,
+            )
+            dispatched += 1
+    finally:
+        await redis.aclose()
 
     if dispatched:
         log.info(
-            "run_slot_scan_job: dispatched %d task(s) (window %s → +60 s)",
+            "run_slot_scan_job: enqueued %d slot(s) to arq (window %s → +60 s)",
             dispatched, now.isoformat(),
         )
+
+
+
+async def run_full_ai_job() -> None:
+    """For each active full_ai campaign, draft AI emails for undrafted leads.
+
+    Drafts are stored in FullAIDraft with status='pending' and require human
+    approval (via a separate endpoint) before they become sendable. Nothing
+    here sends an email or touches CustomEmailOverride/QueueSlot.
+    """
+    from app.models import Campaign, CampaignLead, Lead, FullAIDraft
+
+    DAILY_CAP_PER_CAMPAIGN = 20
+
+    async with AsyncSessionLocal() as session:
+        camp_res = await session.execute(
+            select(Campaign).where(
+                Campaign.campaign_mode == "full_ai",
+                Campaign.paused == False,  # noqa: E712
+            )
+        )
+        campaigns = list(camp_res.scalars().all())
+
+        for campaign in campaigns:
+            already_drafted = await session.execute(
+                select(FullAIDraft.campaign_lead_id)
+                .join(CampaignLead, CampaignLead.id == FullAIDraft.campaign_lead_id)
+                .where(CampaignLead.campaign_id == campaign.id)
+            )
+            drafted_cl_ids = {r[0] for r in already_drafted.all()}
+
+            cl_res = await session.execute(
+                select(CampaignLead, Lead)
+                .join(Lead, Lead.id == CampaignLead.lead_id)
+                .where(
+                    CampaignLead.campaign_id == campaign.id,
+                    CampaignLead.enrollment_status.in_(["active", "needs_custom_email"]),
+                )
+                .limit(DAILY_CAP_PER_CAMPAIGN * 3)  # over-fetch, filter drafted below
+            )
+            candidates = [
+                (cl, lead) for cl, lead in cl_res.all()
+                if cl.id not in drafted_cl_ids
+            ][:DAILY_CAP_PER_CAMPAIGN]
+
+            if not candidates:
+                continue
+
+            log.info("run_full_ai_job: campaign=%s drafting %d leads", campaign.id, len(candidates))
+
+            for cl, lead in candidates:
+                # Credit gate — check and deduct before AI call
+                from app.credits import deduct_credits, get_model_preference, is_bypass_org
+                bypass = await is_bypass_org(session, campaign.org_id)
+                if not bypass:
+                    model = await get_model_preference(session, campaign.org_id)
+                    allowed = await deduct_credits(session, campaign.org_id, model)
+                    if not allowed:
+                        log.warning(
+                            "run_full_ai_job: campaign=%s org=%s insufficient credits — skipping lead=%s",
+                            campaign.id, campaign.org_id, cl.id,
+                        )
+                        continue
+
+                custom = lead.custom_data or {}
+                result = await generate_personalized_email(
+                    session,
+                    lead_name=lead.name or "",
+                    business_name=custom.get("company", ""),
+                    industry=custom.get("industry", ""),
+                    website_text=custom.get("website_text", ""),
+                )
+                if not result or not result.get("subject") or not result.get("body"):
+                    log.info("run_full_ai_job: no draft generated for campaign_lead=%s (lead=%s)", cl.id, lead.id)
+                    continue
+
+                session.add(FullAIDraft(
+                    campaign_lead_id=cl.id,
+                    subject=result["subject"],
+                    body=result["body"],
+                    status="pending",
+                ))
+
+            await session.commit()
+
+
+async def send_reply_email(
+    session: AsyncSession,
+    lead: "Lead",
+    campaign: "Campaign",
+    subject: str,
+    body: str,
+    is_html: bool = False,
+) -> "SendResult | SendFailure | None":
+    """Send an AI-drafted reply on the existing thread with *lead* for *campaign*.
+
+    Looks up the most recent EmailLog rows for lead+campaign to determine
+    which inbox sent the original email and how to thread the reply
+    (In-Reply-To, References, Gmail thread_id). Applies the same
+    cross-campaign thread-safety check used by send_slot_job's follow-up
+    logic: if the Gmail thread is shared with another campaign for this
+    lead, the thread_id is cleared rather than risk misthreading.
+
+    Returns None if there is no prior EmailLog to reply on, or if inbox
+    send credentials cannot be resolved -- the caller should treat None
+    the same as a failure and fall back to draft+notify rather than send.
+
+    Writes an EmailLog row for the outgoing reply (created before sending,
+    deleted on failure, filled in with the real message_id/thread_id on
+    success) so the reply shows up in analytics/history and can itself be
+    threaded off later, same as any other sent email. Flushes but does NOT
+    commit -- the caller commits alongside whatever else it needs to save
+    (Notification, CampaignLead updates, etc.), same pattern as send_slot_job.
+
+    Does NOT touch Notification/unibox state itself -- that is the caller's
+    responsibility, kept separate so this function's job is "send one reply
+    correctly and log it", nothing more.
+    """
+    all_logs_result = await session.execute(
+        select(EmailLog).where(
+            EmailLog.lead_id == lead.id,
+            EmailLog.campaign_id == campaign.id,
+            EmailLog.message_id.isnot(None),
+            EmailLog.message_id != "",
+        ).order_by(EmailLog.sent_at.asc())
+    )
+    all_logs = all_logs_result.scalars().all()
+
+    if not all_logs:
+        log.warning(
+            "send_reply_email: no prior EmailLog for lead_id=%s campaign_id=%s, cannot thread reply",
+            lead.id, campaign.id,
+        )
+        return None
+
+    reply_to_msg_id = all_logs[-1].message_id
+    references_chain = " ".join(
+        (mid if mid.startswith("<") else f"<{mid}>")
+        for log_entry in all_logs
+        if (mid := log_entry.message_id)
+    )
+    prev_thread_id = all_logs[-1].thread_id
+
+    if prev_thread_id:
+        _cross_camp_row = await session.execute(
+            select(EmailLog.id).where(
+                EmailLog.lead_id == lead.id,
+                EmailLog.thread_id == prev_thread_id,
+                EmailLog.campaign_id != campaign.id,
+            ).limit(1)
+        )
+        if _cross_camp_row.scalar_one_or_none():
+            log.warning(
+                "send_reply_email: thread %s for lead_id=%s shared with another campaign "
+                "\u2014 clearing thread_id",
+                prev_thread_id, lead.id,
+            )
+            prev_thread_id = None
+
+    last_inbox_id = all_logs[-1].inbox_id
+    if not last_inbox_id:
+        log.warning(
+            "send_reply_email: last EmailLog for lead_id=%s campaign_id=%s has no inbox_id",
+            lead.id, campaign.id,
+        )
+        return None
+
+    inbox_res = await session.execute(select(Inbox).where(Inbox.id == last_inbox_id))
+    inbox = inbox_res.scalar_one_or_none()
+    if not inbox:
+        log.warning("send_reply_email: inbox %s not found", last_inbox_id)
+        return None
+
+    _creds = await resolve_inbox_send_credentials(session, inbox)
+    if not _creds["ok"]:
+        log.warning(
+            "send_reply_email: could not resolve send credentials for inbox %s", inbox.email
+        )
+        return None
+
+    g_client_id, g_client_secret = await get_google_oauth_credentials(session)
+    o365_client_id, o365_client_secret, o365_tenant_id = await get_office365_oauth_credentials(session)
+
+    from app.send_diagnostics import snapshot_auth_status
+    from app.content_risk import score_content
+    _send_domain = inbox.email.split("@")[-1] if "@" in inbox.email else ""
+    _auth_snapshot = await snapshot_auth_status(_send_domain)
+    _content_risk = score_content(subject, body)
+
+    email_log_entry = EmailLog(
+        lead_id=lead.id,
+        campaign_id=campaign.id,
+        inbox_id=inbox.id,
+        sequence_index=0,
+        subject=subject,
+        message_id="",
+        thread_id=prev_thread_id,
+        auth_snapshot=_auth_snapshot,
+        content_risk_score=_content_risk["score"],
+        content_risk_flags=_content_risk["flags"],
+    )
+    session.add(email_log_entry)
+    await session.flush()
+
+    # Resolve O365 graph message ID for reply threading
+    _o365_reply_graph_msg_id = None
+    if inbox.provider == "office365" and reply_to_msg_id:
+        from app.models import Office365Message as _O365Msg
+        _needle = reply_to_msg_id if reply_to_msg_id.startswith("<") else f"<{reply_to_msg_id}>"
+        _o365_row = await session.execute(
+            select(_O365Msg).where(
+                _O365Msg.inbox_id == inbox.id,
+                _O365Msg.internet_message_id == _needle,
+                ~_O365Msg.message_id.startswith("local-"),
+            ).limit(1)
+        )
+        _o365_msg = _o365_row.scalar_one_or_none()
+        if not _o365_msg and prev_thread_id:
+            _o365_row2 = await session.execute(
+                select(_O365Msg).where(
+                    _O365Msg.inbox_id == inbox.id,
+                    _O365Msg.conversation_id == prev_thread_id,
+                    ~_O365Msg.message_id.startswith("local-"),
+                ).order_by(_O365Msg.received_at.desc()).limit(1)
+            )
+            _o365_msg = _o365_row2.scalar_one_or_none()
+        if _o365_msg:
+            _o365_reply_graph_msg_id = _o365_msg.message_id
+            log.info(
+                "send_reply_email: resolved O365 graph message id=%s for lead_id=%s",
+                _o365_reply_graph_msg_id, lead.id,
+            )
+
+    result = send_email(
+        to_email=lead.email,
+        subject=subject,
+        body=body,
+        from_email=inbox.email,
+        from_name=inbox.display_name or inbox.email,
+        reply_to_msg_id=reply_to_msg_id,
+        references=references_chain,
+        is_html=is_html,
+        provider=inbox.provider or "gmail",
+        gmail_access_token=_creds["gmail_token"],
+        gmail_account=_creds["ga"],
+        thread_id=prev_thread_id,
+        list_unsubscribe_url=None,
+        google_client_id=g_client_id,
+        google_client_secret=g_client_secret,
+        office365_account=_creds["o365_account"],
+        office365_client_id=o365_client_id,
+        office365_client_secret=o365_client_secret,
+        office365_tenant_id=o365_tenant_id,
+        smtp_host=inbox.smtp_host or "",
+        smtp_port=inbox.smtp_port,
+        smtp_username=inbox.smtp_username or "",
+        smtp_password=inbox.smtp_password or "",
+        smtp_encryption=inbox.smtp_encryption or "starttls",
+        conversation_id=prev_thread_id if inbox.provider == "office365" else None,
+        reply_graph_message_id=_o365_reply_graph_msg_id,
+    )
+
+    if isinstance(result, SendFailure):
+        log.warning(
+            "send_reply_email: permanent send failure for lead_id=%s campaign_id=%s: [%s] %s",
+            lead.id, campaign.id, result.error_type, result.message,
+        )
+        await session.delete(email_log_entry)
+        await session.flush()
+        return result
+
+    if not result:
+        log.warning(
+            "send_reply_email: transient send failure for lead_id=%s campaign_id=%s",
+            lead.id, campaign.id,
+        )
+        await session.delete(email_log_entry)
+        await session.flush()
+        return None
+
+    email_log_entry.message_id = result.message_id
+    email_log_entry.thread_id = result.thread_id or prev_thread_id
+
+    log.info(
+        "send_reply_email: lead_id=%s campaign_id=%s inbox=%s result=%s",
+        lead.id, campaign.id, inbox.email, type(result).__name__ if result else "None",
+    )
+    return result
+
+
+async def check_full_ai_auto_send_allowed(
+    session: AsyncSession,
+    reply_text: str,
+    campaign_id: int,
+) -> tuple[bool, str]:
+    """Decide whether a Full AI reply should be auto-sent or fall back to
+    draft+notify for human review.
+
+    Pure decision logic, no email is sent here -- the caller is responsible
+    for actually calling send_reply_email if this returns (True, "").
+
+    Returns (allowed, reason). ``allowed=False`` always comes with a short
+    human-readable ``reason`` string suitable for a log line; ``allowed=True``
+    returns an empty reason.
+
+    Checks, in order:
+      1. The "full_ai_auto_send_enabled" setting (off by default).
+      2. reply_needs_human_review(reply_text) -- ambiguous/risky keywords.
+      3. The per-campaign daily cap ("full_ai_daily_reply_cap" setting,
+         default 20), counted against Notification rows with
+         event_type="ai_reply_sent" and campaign_id=campaign_id created
+         today.
+    """
+    from app.ai_classifier import reply_needs_human_review
+    from app.models import AppSetting, Notification
+
+    settings_res = await session.execute(
+        select(AppSetting).where(AppSetting.key.in_(
+            ["full_ai_auto_send_enabled", "full_ai_daily_reply_cap"]
+        ))
+    )
+    settings_map = {r.key: r.value for r in settings_res.scalars().all()}
+    auto_send_on = settings_map.get("full_ai_auto_send_enabled", "false").lower() == "true"
+
+    if not auto_send_on:
+        return False, "auto-send disabled in settings"
+
+    if reply_needs_human_review(reply_text):
+        return False, "reply contains a keyword requiring human review"
+
+    daily_cap = int(settings_map.get("full_ai_daily_reply_cap", "20") or 20)
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    sent_today_res = await session.execute(
+        select(func.count(Notification.id)).where(
+            Notification.event_type == "ai_reply_sent",
+            Notification.campaign_id == campaign_id,
+            Notification.created_at >= today_start,
+        )
+    )
+    sent_today = sent_today_res.scalar() or 0
+    if sent_today >= daily_cap:
+        return False, f"daily reply cap ({daily_cap}) reached for this campaign"
+
+    return True, ""
+
+
+async def run_tree_transition_job():
+    """Wrapper called by the arq worker to evaluate branch-tree transitions."""
+    from app.queue_logic import evaluate_tree_transitions
+    from app.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        transitioned = await evaluate_tree_transitions(session)
+        await session.commit()
+        log.info("run_tree_transition_job: transitioned=%d", transitioned)

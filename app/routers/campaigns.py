@@ -1,4 +1,4 @@
-"""Campaigns and sequences API routes."""
+﻿"""Campaigns and sequences API routes."""
 # // BEACON SYNC: This file handles tracking logic that Beacon mirrors.
 # // Any changes to tracking behavior, event types, metadata collected, or URL structure
 # // must also be reflected in the Beacon service (/beacon or the separate Beacon repo).
@@ -264,7 +264,7 @@ async def list_campaigns(db: AsyncSession = Depends(get_db), org_id: int | None 
     ]
 
 
-# utility used by Settings.jsx before changing strategy – the front end can
+# utility used by Settings.jsx before changing strategy � the front end can
 # ask for confirmation when there are active leads that would be
 # re-scheduled by a strategy switch.
 @router.get("/has-leads")
@@ -312,7 +312,7 @@ async def create_campaign(data: CampaignCreate, db: AsyncSession = Depends(get_d
 
 
 class CampaignReorder(BaseModel):
-    """Body for POST /api/campaigns/reorder — explicit priority ordering.
+    """Body for POST /api/campaigns/reorder � explicit priority ordering.
 
     ``campaign_ids`` is the desired order from highest-priority (index 0) to
     lowest.  Each campaign's ``priority`` column is set to its index in this
@@ -447,6 +447,21 @@ async def delete_campaign(campaign_id: int, db: AsyncSession = Depends(get_db), 
     # remove the campaign itself; the FK constraint otherwise trips during
     # the flush when SQLAlchemy issues the DELETE on campaign.
     await db.execute(delete(LeadUnsubscribeToken).where(LeadUnsubscribeToken.campaign_id == campaign_id))
+    # Delete sequence tree nodes and edges before campaign delete
+    from app.models import SequenceNode, SequenceEdge
+    from sqlalchemy import update as sql_update
+    # Null out current_node_id on campaign_leads before deleting nodes
+    await db.execute(
+        sql_update(CampaignLead)
+        .where(CampaignLead.campaign_id == campaign_id)
+        .values(current_node_id=None)
+    )
+    await db.execute(delete(SequenceEdge).where(
+        SequenceEdge.from_node_id.in_(
+            select(SequenceNode.id).where(SequenceNode.campaign_id == campaign_id)
+        )
+    ))
+    await db.execute(delete(SequenceNode).where(SequenceNode.campaign_id == campaign_id))
 
     # Cascade handles sequences, campaign_leads (and their queue_slots),
     # campaign_inboxes, etc.  after flushing we can inspect which of the
@@ -1089,7 +1104,7 @@ async def list_campaign_leads(campaign_id: int, db: AsyncSession = Depends(get_d
     def stage_label(lead_id: int) -> str:
         last_index = last_sent_map.get(lead_id, -1)
         if total_sequences == 0:
-            return "—"
+            return "�"
         next_step = last_index + 1
         if next_step >= total_sequences:
             return "Complete"
@@ -1214,7 +1229,7 @@ async def patch_campaign_lead(
     }
 
 
-# ── Personalized sequence reconciliation ─────────────────────────────────
+# -- Personalized sequence reconciliation ---------------------------------
 async def reconcile_personalized_status(
     db: AsyncSession,
     campaign_id: int,
@@ -1232,7 +1247,7 @@ async def reconcile_personalized_status(
     Leads whose pending work is done are set to ``active``.
     Terminal statuses (bounced, unsubscribed, wrong_person, completed) are left alone.
 
-    Idempotent — safe to call multiple times.
+    Idempotent � safe to call multiple times.
     """
     await db.flush()  # Ensure pending changes visible to queries
     pers_seq_result = await db.execute(
@@ -1266,7 +1281,7 @@ async def reconcile_personalized_status(
     is_asap = campaign_mode == "asap"
 
     if not personalized_seqs:
-        # No personalized sequences — move any stuck needs_custom_email leads back to active
+        # No personalized sequences � move any stuck needs_custom_email leads back to active
         to_active = 0
         for cl in campaign_leads:
             if cl.enrollment_status == "needs_custom_email":
@@ -1279,7 +1294,7 @@ async def reconcile_personalized_status(
                 from app.routers.schedule import enqueue_global_recalculate
                 enqueue_global_recalculate(background_tasks)
                 log.info(
-                    "reconcile_personalized: campaign=%s no personalized seqs → %d → active",
+                    "reconcile_personalized: campaign=%s no personalized seqs ? %d ? active",
                     campaign_id, to_active,
                 )
         return {
@@ -1336,7 +1351,7 @@ async def reconcile_personalized_status(
                 pending += 1
 
         if is_asap:
-            # In ASAP mode, never block leads — transition any stuck ones back to active
+            # In ASAP mode, never block leads � transition any stuck ones back to active
             if current == "needs_custom_email":
                 cl.enrollment_status = "active"
                 to_active += 1
@@ -1358,7 +1373,7 @@ async def reconcile_personalized_status(
             from app.routers.schedule import enqueue_global_recalculate
             enqueue_global_recalculate(background_tasks)
             log.info(
-                "reconcile_personalized: campaign=%s mode=%s → needs_custom=%d → active=%d checked=%d",
+                "reconcile_personalized: campaign=%s mode=%s ? needs_custom=%d ? active=%d checked=%d",
                 campaign_id, campaign_mode, to_needs_custom, to_active, len(campaign_leads),
             )
 
@@ -1435,7 +1450,7 @@ async def write_custom_email(
     if not cl:
         raise HTTPException(404, "Lead not enrolled in this campaign")
     if cl.enrollment_status in ("completed", "bounced", "unsubscribed", "wrong_person"):
-        raise HTTPException(400, f"Lead enrollment status is '{cl.enrollment_status}' — custom emails are not needed for terminal statuses")
+        raise HTTPException(400, f"Lead enrollment status is '{cl.enrollment_status}' � custom emails are not needed for terminal statuses")
 
     # Upsert the custom email override
     ov_result = await db.execute(
@@ -1495,7 +1510,7 @@ async def write_custom_email(
             from app.routers.schedule import enqueue_global_recalculate
             enqueue_global_recalculate(background_tasks)
             log.info(
-                "write_custom_email: lead %s campaign %s all custom emails written → active; triggering recalc",
+                "write_custom_email: lead %s campaign %s all custom emails written ? active; triggering recalc",
                 lead_id, campaign_id,
             )
     elif campaign_mode == "asap" and cl.enrollment_status == "needs_custom_email":
@@ -1507,16 +1522,16 @@ async def write_custom_email(
         from app.routers.schedule import enqueue_global_recalculate
         enqueue_global_recalculate(background_tasks)
         log.info(
-            "write_custom_email: lead %s campaign %s ASAP mode — first custom email written → active; triggering recalc",
+            "write_custom_email: lead %s campaign %s ASAP mode � first custom email written ? active; triggering recalc",
             lead_id, campaign_id,
         )
     elif campaign_mode == "asap":
-        # Already active — still trigger recalc so the newly-written email gets scheduled
+        # Already active � still trigger recalc so the newly-written email gets scheduled
         await db.commit()
         from app.routers.schedule import enqueue_global_recalculate
         enqueue_global_recalculate(background_tasks)
         log.info(
-            "write_custom_email: lead %s campaign %s ASAP mode — new custom email written; triggering recalc",
+            "write_custom_email: lead %s campaign %s ASAP mode � new custom email written; triggering recalc",
             lead_id, campaign_id,
         )
 
@@ -1593,7 +1608,7 @@ async def preview_email(
 
     from app.sender import render_body, get_lead_data
 
-    # Build substitution data – fall back to placeholder strings when no lead given.
+    # Build substitution data � fall back to placeholder strings when no lead given.
     lead_data: dict = {"name": "{{name}}", "email": "{{email}}"}
     if data.lead_id:
         lead_result = await db.execute(select(Lead).where(Lead.id == data.lead_id))
@@ -1733,7 +1748,7 @@ async def send_test_email(
     )
 
     if not result:
-        raise HTTPException(500, "Failed to send test email — check inbox configuration")
+        raise HTTPException(500, "Failed to send test email � check inbox configuration")
 
     log.info(
         "send_test_email: campaign=%s sequence=%s to=%s inbox=%s",
@@ -1863,7 +1878,7 @@ async def step_analytics(campaign_id: int, db: AsyncSession = Depends(get_db), o
             vid = el.variant_id  # None or a variant id
             bucket = variant_map.get(vid)
             if bucket is None:
-                # variant was deleted but logs remain — group under default
+                # variant was deleted but logs remain � group under default
                 bucket = variant_map[None]
             bucket["sent"] += 1
             if el.opened:
@@ -2019,7 +2034,7 @@ async def bulk_add_leads_to_campaign(
     if not leads_data:
         raise HTTPException(400, "No leads provided")
 
-    # Deduplicate within the batch — keep only the first occurrence of each email
+    # Deduplicate within the batch � keep only the first occurrence of each email
     seen_emails: set[str] = set()
     deduped: list[CampaignLeadAdd] = []
     for entry in leads_data:
@@ -2128,7 +2143,7 @@ async def bulk_add_leads_to_campaign(
                     already_enrolled += 1
                     continue
 
-            # Enroll — scheduling happens after all leads are enrolled (see below)
+            # Enroll � scheduling happens after all leads are enrolled (see below)
             cl = CampaignLead(campaign_id=campaign_id, lead_id=lead.id)
             db.add(cl)
             await db.flush()
@@ -2147,7 +2162,7 @@ async def bulk_add_leads_to_campaign(
             results.append({"email": email, "status": "error", "detail": str(exc)})
             errors += 1
 
-    # ── Detect providers then schedule all new enrollments ──────────────────
+    # -- Detect providers then schedule all new enrollments ------------------
     if new_enrollments:
         replied_lead_ids: set[int] = set()
         if getattr(campaign_obj, "stop_on_reply", False):
@@ -2162,7 +2177,7 @@ async def bulk_add_leads_to_campaign(
 
         if match_provider:
             # Providers must be known before queue slot assignment so the correct
-            # inbox type is selected (Google → Gmail, Office 365 → Office365).
+            # inbox type is selected (Google ? Gmail, Office 365 ? Office365).
             from app.email_provider import detect_provider_for_email
             needs_detection = [
                 (cl_id, lead_id, email)
@@ -2217,7 +2232,7 @@ async def bulk_add_leads_to_campaign(
                 if cl_id:
                     r["slots_created"] = slot_counts.get(cl_id, 0)
                     log.info(
-                        "bulk_add_leads: enrolled lead %s in campaign %s — %d slot(s)",
+                        "bulk_add_leads: enrolled lead %s in campaign %s � %d slot(s)",
                         r["lead_id"], campaign_id, r["slots_created"],
                     )
 
@@ -2249,7 +2264,7 @@ async def bulk_add_leads_to_campaign(
     }
 
 
-# ── Background email verification ────────────────────────────────────────────
+# -- Background email verification --------------------------------------------
 
 async def _detect_providers_background(lead_email_pairs: list[tuple[int, str]]) -> None:
     """Detect email provider for each lead via DNS MX lookup and persist the result."""
@@ -2347,7 +2362,7 @@ async def _run_background_verification(lead_ids: list[int], *, reverify: bool = 
                 async def _do_verify(email: str) -> "VerificationResult":  # type: ignore[name-defined]  # noqa: E731
                     return await verify_single(email, api_key, provider_name)
 
-            # Mark leads as pending (skip if we are only re-verifying – they may
+            # Mark leads as pending (skip if we are only re-verifying � they may
             # already have a status we want to compare against)
             result = await db.execute(select(Lead).where(Lead.id.in_(lead_ids)))
             leads = result.scalars().all()
@@ -2882,7 +2897,7 @@ async def import_campaign_leads(
             results_list.append({"row": row_num, "email": email, "status": "error", "detail": str(exc)})
             errors += 1
 
-    # ── Detect providers then schedule all new enrollments ──────────────────
+    # -- Detect providers then schedule all new enrollments ------------------
     added_lead_ids_csv: list[int] = []
     if new_enrollments:
         replied_lead_ids_csv: set[int] = set()
@@ -2898,7 +2913,7 @@ async def import_campaign_leads(
 
         if match_provider:
             # Providers must be known before queue slot assignment so the correct
-            # inbox type is selected (Google → Gmail, Office 365 → Office365).
+            # inbox type is selected (Google ? Gmail, Office 365 ? Office365).
             from app.email_provider import detect_provider_for_email
             needs_detection = [
                 (cl_id, lead_id, email)

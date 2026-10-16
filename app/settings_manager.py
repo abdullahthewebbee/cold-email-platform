@@ -50,6 +50,18 @@ class Settings:
         self.office365_client_id: str = os.getenv("OFFICE365_CLIENT_ID", "")
         self.office365_client_secret: str = os.getenv("OFFICE365_CLIENT_SECRET", "")
         self.office365_tenant_id: str = os.getenv("OFFICE365_TENANT_ID", "common")
+
+        # Stripe billing
+        self.stripe_secret_key: str = os.getenv("STRIPE_SECRET_KEY", "")
+        self.stripe_webhook_secret: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+        self.stripe_price_starter_monthly: str = os.getenv("STRIPE_PRICE_STARTER_MONTHLY", "")
+        self.stripe_price_starter_annual: str = os.getenv("STRIPE_PRICE_STARTER_ANNUAL", "")
+        self.stripe_price_growth_monthly: str = os.getenv("STRIPE_PRICE_GROWTH_MONTHLY", "")
+        self.stripe_price_growth_annual: str = os.getenv("STRIPE_PRICE_GROWTH_ANNUAL", "")
+        self.stripe_price_scale_monthly: str = os.getenv("STRIPE_PRICE_SCALE_MONTHLY", "")
+        self.stripe_price_scale_annual: str = os.getenv("STRIPE_PRICE_SCALE_ANNUAL", "")
+        self.stripe_price_agency_monthly: str = os.getenv("STRIPE_PRICE_AGENCY_MONTHLY", "")
+        self.stripe_price_agency_annual: str = os.getenv("STRIPE_PRICE_AGENCY_ANNUAL", "")
         
         # Background job interval
         self.queue_check_interval_minutes: int = 1

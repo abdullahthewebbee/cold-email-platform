@@ -227,6 +227,7 @@ async def _resolve_user_and_login(
             oauth_provider=provider,
             oauth_sub=sub,
             role="admin",
+            is_owner=True,
             is_active=True,
         )
         db.add(user)

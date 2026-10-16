@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+﻿import { useParams } from 'react-router-dom';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNotify } from '../context/NotificationContext';
 import { useLoading } from '../context/LoadingContext';
@@ -17,6 +17,7 @@ import {
 } from '../utils/datetime';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
+import SequenceTreeBuilder from './SequenceTreeBuilder';
 import {
   ResponsiveContainer,
   AreaChart as ReAreaChart,
@@ -27,12 +28,20 @@ import {
   Legend,
   CartesianGrid,
 } from 'recharts';
+import Icon from '../components/ui/AegisIcon';
 
 // ─── tabs ─────────────────────────────────────────────────────────────────────
-const TABS = ['analytics', 'sequences', 'leads', 'queue', 'settings'];
+const ALL_TABS = ['analytics', 'sequences', 'tree', 'leads', 'drafts', 'queue', 'settings'];
+function getVisibleTabs(mode) {
+  if (mode === 'full_ai') return ['analytics', 'drafts', 'leads', 'queue', 'settings'];
+  if (mode === 'semi_manual') return ['analytics', 'sequences', 'leads', 'queue', 'settings'];
+  return ALL_TABS;
+}
 const TAB_LABELS = {
   sequences: 'Sequences',
+  tree: 'Branch Tree',
   leads: 'Leads',
+  drafts: 'Drafts',
   analytics: 'Analytics',
   queue: 'Queue',
   settings: 'Settings',
@@ -53,10 +62,19 @@ export default function CampaignDetail() {
   const [recalcInProgress, setRecalcInProgress] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(() => !apiCache.get(`/campaigns/${id}`));
+  const _campaignMode = campaign ? (campaign.campaign_mode || 'manual') : null;
+  const TABS = campaign ? getVisibleTabs(campaign.campaign_mode || 'manual') : ALL_TABS;
   const [activeTab, setActiveTab] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    return TABS.includes(hash) ? hash : 'analytics';
+    return ALL_TABS.includes(hash) ? hash : 'analytics';
   });
+
+  // When TABS changes (campaign loaded), ensure activeTab is valid
+  useEffect(() => {
+    if (campaign && !TABS.includes(activeTab)) {
+      setActiveTab('analytics');
+    }
+  }, [TABS]);
   const confirm = useConfirm();
   const notify = useNotify();
   const loadingCtrl = useLoading();
@@ -291,6 +309,11 @@ export default function CampaignDetail() {
         />
       )}
 
+            {/* Branch tree tab */}
+      {activeTab === 'tree' && (
+        <SequenceTreeBuilder campaignId={id} onGoToSequences={() => setActiveTab('sequences')} />
+      )}
+
       {/* Leads tab */}
       {activeTab === 'leads' && (
         <LeadsTab
@@ -303,6 +326,10 @@ export default function CampaignDetail() {
             setTimeout(() => queueRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
           }}
         />
+      )}
+
+      {activeTab === 'drafts' && (
+        <DraftsTab campaignId={id} refresh={loadAll} />
       )}
 
       {/* Analytics tab */}
@@ -326,7 +353,7 @@ export default function CampaignDetail() {
             {queueFilter && (
               <span className="text-sm text-teal-600 font-medium flex items-center gap-1">
                 Showing: {queueFilter}
-                <button className="ml-1 text-gray-400 hover:text-gray-600" onClick={() => setQueueFilter(null)}>✕</button>
+                <button className="ml-1 text-gray-400 hover:text-gray-600" onClick={() => setQueueFilter(null)}><Icon name="x" size={12} /></button>
               </span>
             )}
           </div>
@@ -1241,13 +1268,107 @@ function LeadsTab({ leads, campaignId, refresh, onViewQueue }) {
 
 // ─── Analytics Tab ────────────────────────────────────────────────────────────
 const SERIES_LIST = [
-  { key: 'sent',         name: 'Sent',          stroke: 'rgba(59,130,246,0.8)',  fill: 'rgba(59,130,246,0.15)' },
-  { key: 'totalOpens',   name: 'Total Opens',   stroke: 'rgba(234,179,8,0.8)',   fill: 'rgba(234,179,8,0.15)' },
-  { key: 'uniqueOpens',  name: 'Unique Opens',  stroke: 'rgba(16,185,129,0.8)',  fill: 'rgba(16,185,129,0.15)' },
-  { key: 'totalReplies', name: 'Replies',        stroke: 'rgba(45,212,191,0.8)',  fill: 'rgba(45,212,191,0.15)' },
-  { key: 'totalClicks',  name: 'Total Clicks',  stroke: 'rgba(234,88,12,0.8)',   fill: 'rgba(234,88,12,0.15)' },
-  { key: 'uniqueClicks', name: 'Unique Clicks', stroke: 'rgba(236,72,153,0.8)',  fill: 'rgba(236,72,153,0.15)' },
+  { key: 'sent', name: 'Sent', stroke: 'var(--chart-sent)', fill: 'color-mix(in srgb, var(--chart-sent) 15%, transparent)' },
+  { key: 'totalOpens', name: 'Total Opens', stroke: 'var(--chart-opened)', fill: 'color-mix(in srgb, var(--chart-opened) 15%, transparent)' },
+  { key: 'uniqueOpens', name: 'Unique Opens', stroke: 'var(--chart-opened-unique)', fill: 'color-mix(in srgb, var(--chart-opened-unique) 15%, transparent)' },
+  { key: 'totalReplies', name: 'Replies', stroke: 'var(--chart-replied)', fill: 'color-mix(in srgb, var(--chart-replied) 15%, transparent)' },
+  { key: 'totalClicks', name: 'Total Clicks', stroke: 'var(--chart-clicked)', fill: 'color-mix(in srgb, var(--chart-clicked) 15%, transparent)' },
+  { key: 'uniqueClicks', name: 'Unique Clicks', stroke: 'var(--chart-clicked-unique)', fill: 'color-mix(in srgb, var(--chart-clicked-unique) 15%, transparent)' },
 ];
+
+function DraftsTab({ campaignId, refresh }) {
+  const notify = useNotify();
+  const [drafts, setDrafts] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+
+  const load = async () => {
+    try {
+      const res = await api.get(`/campaigns/${campaignId}/full-ai-drafts`);
+      setDrafts(res);
+    } catch (e) {
+      notify({ type: 'error', message: 'Failed to load drafts: ' + e.message });
+      setDrafts([]);
+    }
+  };
+
+  useEffect(() => { load(); }, [campaignId]);
+
+  const approve = async (draftId) => {
+    setBusyId(draftId);
+    try {
+      await api.post(`/campaigns/${campaignId}/full-ai-drafts/${draftId}/approve`);
+      notify({ type: 'success', message: 'Draft approved \u2014 lead will be queued for sending.' });
+      await load();
+      refresh?.();
+    } catch (e) {
+      notify({ type: 'error', message: 'Approve failed: ' + e.message });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const reject = async (draftId) => {
+    setBusyId(draftId);
+    try {
+      await api.post(`/campaigns/${campaignId}/full-ai-drafts/${draftId}/reject`);
+      notify({ type: 'success', message: 'Draft rejected.' });
+      await load();
+    } catch (e) {
+      notify({ type: 'error', message: 'Reject failed: ' + e.message });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (drafts === null) {
+    return <div className="py-8 text-center text-gray-400 text-sm">Loading drafts...</div>;
+  }
+
+  if (drafts.length === 0) {
+    return (
+      <div className="py-12 text-center text-gray-400 text-sm">
+        No pending drafts. The AI checks for new leads to draft every few minutes.
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <p className="text-xs text-gray-500">
+        Review AI-written first-touch emails before they send. Approving queues the email through the normal send pipeline (bounce, suppression and send-window rules still apply).
+      </p>
+      {drafts.map(d => (
+        <div key={d.draft_id} className="bg-white rounded-lg border border-gray-200 p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold text-gray-800">{d.lead_name || d.lead_email}</div>
+              <div className="text-xs text-gray-400">{d.lead_email}</div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => approve(d.draft_id)}
+                disabled={busyId === d.draft_id}
+                className="text-xs px-3 py-1.5 rounded-lg bg-teal-500 text-white font-medium hover:bg-teal-600 transition-colors disabled:opacity-50"
+              >
+                {busyId === d.draft_id ? 'Working...' : 'Approve'}
+              </button>
+              <button
+                onClick={() => reject(d.draft_id)}
+                disabled={busyId === d.draft_id}
+                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+          <div className="text-sm font-medium text-gray-700 border-t border-gray-100 pt-2">{d.subject}</div>
+          <div className="text-sm text-gray-600 whitespace-pre-wrap">{d.body}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 
 function CampaignAnalyticsTab({ campaignId, campaign, sentData = [], sequences = [], onRefresh }) {
   const notify = useNotify();
@@ -1489,10 +1610,10 @@ function CampaignAnalyticsTab({ campaignId, campaign, sentData = [], sequences =
         <div ref={chartContainerRef} style={{ width: '100%', height: 290 }}>
           <ResponsiveContainer>
             <ReAreaChart data={displayData} onMouseMove={handleChartMouseMove} margin={{ top: 10, right: 20, left: 0, bottom: 30 }}>
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={formatXDate} />
-              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} stroke="var(--border)" tickFormatter={formatXDate} />
+              <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} stroke="var(--border)" allowDecimals={false} />
               <Tooltip wrapperStyle={{ zIndex: 1000 }} />
-              <CartesianGrid strokeDasharray="3 3" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               {SERIES_LIST.map(s => (
                 <Area key={s.key} name={s.name} type="monotone" dataKey={s.key}
                   stroke={s.stroke} fill={s.fill} hide={hide[s.key]} />
@@ -1763,17 +1884,17 @@ function SentEmailsPanel({ sentData = [], filter, onFilterChange }) {
                   <td className="px-3 py-2 text-xs text-gray-700 max-w-[200px] truncate">{e.subject || '—'}</td>
                   <td className="px-3 py-2 text-center">
                     {e.opened
-                      ? <span className="text-amber-600 font-bold text-xs">✓</span>
+                      ? <span className="text-amber-600 font-bold text-xs"><Icon name="check" size={13} /></span>
                       : <span className="text-gray-300 text-xs">—</span>}
                   </td>
                   <td className="px-3 py-2 text-center">
                     {e.clicked
-                      ? <span className="text-orange-600 font-bold text-xs">✓</span>
+                      ? <span className="text-orange-600 font-bold text-xs"><Icon name="check" size={13} /></span>
                       : <span className="text-gray-300 text-xs">—</span>}
                   </td>
                   <td className="px-3 py-2 text-center">
                     {e.replied
-                      ? <span className="text-violet-600 font-bold text-xs">✓</span>
+                      ? <span className="text-violet-600 font-bold text-xs"><Icon name="check" size={13} /></span>
                       : <span className="text-gray-300 text-xs">—</span>}
                   </td>
                   <td className="px-3 py-2 text-xs">
@@ -1903,6 +2024,22 @@ function SettingsTab({ campaign, inboxes, onSave, campaignId }) {
         {msg && (
           <div className={`rounded-lg px-3 py-2 text-sm ${msg.type==='error'?'bg-red-50 text-red-700':'bg-green-50 text-green-700'}`}>
             {msg.text}
+          </div>
+        )}
+
+        {/* Campaign Code */}
+        {campaign.campaign_code && (
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
+            <div className="flex-1">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Campaign Code</div>
+              <div className="font-mono font-bold text-gray-800 text-sm">{campaign.campaign_code}</div>
+              <div className="text-xs text-gray-400 mt-0.5">Mode: {campaign.campaign_mode === 'semi_manual' ? 'Semi-Manual AI' : campaign.campaign_mode === 'full_ai' ? 'Full AI Agent' : 'Manual'}</div>
+            </div>
+            <button type="button"
+              onClick={() => { navigator.clipboard.writeText(campaign.campaign_code); }}
+              className="text-xs px-3 py-1.5 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 font-medium transition-colors">
+              Copy
+            </button>
           </div>
         )}
 
@@ -2059,12 +2196,12 @@ function SettingsTab({ campaign, inboxes, onSave, campaignId }) {
 
         {(form.send_all_as_text||form.send_first_as_text) && (form.track_opens||form.track_clicks) && (
           <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-            ⚠ Plain text mode will override tracking — open/click tracking requires HTML and will be disabled for affected emails.
+            <Icon name="alert-triangle" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Plain text mode will override tracking — open/click tracking requires HTML and will be disabled for affected emails.
           </p>
         )}
         {(form.send_all_as_text||form.send_first_as_text) && !(form.track_opens||form.track_clicks) && (
           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            ⚠ HTML settings on sequences will be ignored for affected emails.
+            <Icon name="alert-triangle" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />HTML settings on sequences will be ignored for affected emails.
           </p>
         )}
         {!(form.send_all_as_text||form.send_first_as_text) && (form.track_opens||form.track_clicks) && (
@@ -2166,7 +2303,7 @@ function SequenceBodyEditor({ value, onChange, isHtml, onIsHtmlChange, previewTe
         </label>
         {isOverridden && isHtml && (
           <span className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
-            ⚠ {overrideMsg}
+            <Icon name="alert-triangle" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />{overrideMsg}
           </span>
         )}
         {trackingUpgrade && (
@@ -2368,7 +2505,7 @@ function PreviewModal({ sequence, campaignId, leads, onClose, variant = null, ed
               {testState === 'sending' ? 'Sending…' : 'Send test'}
             </Button>
             {testState === 'success' && (
-              <span className="text-xs text-green-600 font-medium">✓ Sent!</span>
+              <span className="text-xs text-green-600 font-medium"><Icon name="check" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Sent!</span>
             )}
             {testState?.error && (
               <span className="text-xs text-red-600">{testState.error}</span>
@@ -2614,11 +2751,11 @@ function PersonalizedSequenceSection({ sequence, sequences, personalizedSequence
                     )}
                     <td className="px-3 py-2">
                       {alreadySent ? (
-                        <span className="text-green-600 text-xs font-medium">✓ Written</span>
+                        <span className="text-green-600 text-xs font-medium"><Icon name="check" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Written</span>
                       ) : isTerminal ? (
                         <span className="text-gray-400 text-xs font-medium">{terminalLabel}</span>
                       ) : isWritten ? (
-                        <span className="text-green-600 text-xs font-medium">✓ Written</span>
+                        <span className="text-green-600 text-xs font-medium"><Icon name="check" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Written</span>
                       ) : (
                         <span className="text-purple-600 text-xs font-medium">Needs writing</span>
                       )}

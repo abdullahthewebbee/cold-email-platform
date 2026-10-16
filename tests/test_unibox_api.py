@@ -54,7 +54,7 @@ async def test_get_unibox_merges_and_sorts(session):
     )
     await session.flush()
 
-    payload = await unibox_router.get_unibox(page=1, page_size=20, leads_only=False, lead_status=None, db=session)
+    payload = await list_unibox_conversations(session, page=1, page_size=20, leads_only=False, lead_status=None, org_id=None)
     items = payload["items"]
     assert payload["total"] == 2
     assert items[0]["thread_id"] == "t-b"
@@ -95,7 +95,7 @@ async def test_get_unibox_thread_messages_are_chronological(session):
     )
     await session.flush()
 
-    payload = await unibox_router.get_unibox_thread("thr-1", inbox_id=inbox.id, db=session)
+    payload = await get_thread_messages(session, thread_id="thr-1", inbox_id=inbox.id)
     messages = payload["messages"]
     assert [m["message_id"] for m in messages] == ["m-1", "m-2"]
     assert messages[0]["direction"] == "received"

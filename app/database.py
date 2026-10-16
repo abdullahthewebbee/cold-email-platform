@@ -25,6 +25,30 @@ elif db_url.startswith("postgresql://"):
 # ``TEST_DATABASE_URL`` is set to a memory URL; production (Postgres) is
 # unaffected.
 engine_kwargs: dict = {"echo": False}
+
+# ── PostgreSQL connection pool tuning ────────────────────────────────────
+# SQLAlchemy defaults (pool_size=5, max_overflow=10) are far too small once
+# the API runs multiple workers alongside arq background workers — every
+# process gets its own pool, so the DB-side connection count is
+# (instances x (pool_size + max_overflow)). Postgres' own default
+# max_connections is 100, so keep the product comfortably under that.
+#
+# Defaults below suit a single-VPS deployment (1 API + 1 worker container).
+# Override via env when scaling out horizontally.
+if not db_url.startswith("sqlite"):
+    engine_kwargs.update(
+        {
+            "pool_size": int(os.getenv("DB_POOL_SIZE", "20")),
+            "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "10")),
+            # Recycle connections before Postgres/proxies drop them (default 30 min).
+            "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
+            # Verify a connection is alive before handing it out — prevents
+            # "server closed the connection unexpectedly" after idle periods.
+            "pool_pre_ping": True,
+            # Fail fast instead of hanging forever when the pool is exhausted.
+            "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
+        }
+    )
 if db_url.startswith("sqlite"):
     from sqlalchemy.pool import StaticPool
 
@@ -156,6 +180,11 @@ async def _run_migrations(conn) -> None:
     )
     for stmt in pg_alters:
         await conn.execute(text(stmt))
+    # 2026-09-21: custom_id on sequence_node + no_reply_minutes on sequence_edge
+    await conn.execute(text("ALTER TABLE sequence_node ADD COLUMN IF NOT EXISTS custom_id VARCHAR(32) NULL"))
+    await conn.execute(text("ALTER TABLE sequence_variant ADD COLUMN IF NOT EXISTS node_id INTEGER NULL REFERENCES sequence_node(id) ON DELETE CASCADE"))
+    await conn.execute(text("ALTER TABLE sequence_variant ALTER COLUMN sequence_id DROP NOT NULL"))
+    await conn.execute(text("ALTER TABLE sequence_edge ADD COLUMN IF NOT EXISTS no_reply_minutes INTEGER NULL"))
     await conn.execute(
         text("CREATE UNIQUE INDEX IF NOT EXISTS ix_inbox_connect_token ON inbox (connect_token)")
     )
@@ -214,7 +243,82 @@ async def _run_migrations(conn) -> None:
         )
     )
 
+    # 2026-09-09: Stripe billing subscription tracking
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS subscription (
+            id SERIAL PRIMARY KEY,
+            org_id INTEGER NOT NULL UNIQUE REFERENCES organization(id) ON DELETE CASCADE,
+            stripe_customer_id VARCHAR(255),
+            stripe_subscription_id VARCHAR(255),
+            plan VARCHAR(32),
+            billing_period VARCHAR(16),
+            status VARCHAR(32) DEFAULT 'none',
+            current_period_end TIMESTAMP WITHOUT TIME ZONE,
+            cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        )
+    """))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subscription_org_id ON subscription (org_id)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subscription_stripe_customer_id ON subscription (stripe_customer_id)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subscription_stripe_subscription_id ON subscription (stripe_subscription_id)"))
 
+    # 2026-09-09: Audit log (append-only security event trail)
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id SERIAL PRIMARY KEY,
+            org_id INTEGER REFERENCES organization(id) ON DELETE SET NULL,
+            user_id INTEGER REFERENCES app_user(id) ON DELETE SET NULL,
+            action VARCHAR(128) NOT NULL,
+            target_type VARCHAR(64),
+            target_id VARCHAR(128),
+            detail JSONB DEFAULT '{}',
+            ip_address VARCHAR(64),
+            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        )
+    """))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_log_org_id ON audit_log (org_id)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_log_action ON audit_log (action)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_log_created_at ON audit_log (created_at)"))
+
+
+    # 2026-09-10: Index audit — foreign-key columns that had no index.
+    # Unindexed FK columns cause sequential scans on JOINs and slow cascading
+    # deletes as tables grow. Created here (not CONCURRENTLY) because these run
+    # inside the startup transaction; safe now while tables are small. If adding
+    # further indexes to a large production table later, use CREATE INDEX
+    # CONCURRENTLY outside a transaction instead.
+    fk_indexes = [
+        # --- High impact: touched on every send or every analytics query ---
+        "CREATE INDEX IF NOT EXISTS ix_lead_reply_campaign_id ON lead_reply (campaign_id)",
+        "CREATE INDEX IF NOT EXISTS ix_sequence_campaign_id ON sequence (campaign_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lead_unsub_token_campaign_id ON lead_unsubscribe_token (campaign_id)",
+        "CREATE INDEX IF NOT EXISTS ix_email_open_email_log_id ON email_open (email_log_id)",
+        "CREATE INDEX IF NOT EXISTS ix_email_click_email_log_id ON email_click (email_log_id)",
+        "CREATE INDEX IF NOT EXISTS ix_campaign_inbox_inbox_id ON campaign_inbox (inbox_id)",
+        # --- Medium: branch-tree, A/B variants, unibox threading ---
+        "CREATE INDEX IF NOT EXISTS ix_queue_slot_node_id ON queue_slot (node_id)",
+        "CREATE INDEX IF NOT EXISTS ix_queue_slot_variant_id ON queue_slot (variant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_email_log_variant_id ON email_log (variant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_custom_email_override_sequence_id ON custom_email_override (sequence_id)",
+        "CREATE INDEX IF NOT EXISTS ix_gmail_message_thread_id ON gmail_message (thread_id)",
+        "CREATE INDEX IF NOT EXISTS ix_o365_message_conversation_id ON office365_message (conversation_id)",
+        "CREATE INDEX IF NOT EXISTS ix_gmail_attachment_message_id ON gmail_attachment (message_id)",
+        # --- Low: small tables, but free to index ---
+        "CREATE INDEX IF NOT EXISTS ix_api_key_user_id ON api_key (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_campaign_lead_current_node_id ON campaign_lead (current_node_id)",
+        "CREATE INDEX IF NOT EXISTS ix_suppression_entry_source_campaign_id ON suppression_entry (source_campaign_id)",
+        "CREATE INDEX IF NOT EXISTS ix_user_invitation_invited_by ON user_invitation (invited_by_user_id)",
+        # --- Done-for-you: column added after first release ---
+        "ALTER TABLE done_for_you_order ADD COLUMN IF NOT EXISTS extra_setup JSON",
+        "ALTER TABLE done_for_you_order ADD COLUMN IF NOT EXISTS amount_cents INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE done_for_you_order ADD COLUMN IF NOT EXISTS payment_status VARCHAR(16) NOT NULL DEFAULT 'unpaid'",
+        "ALTER TABLE done_for_you_order ADD COLUMN IF NOT EXISTS stripe_session_id VARCHAR(255)",
+        "ALTER TABLE done_for_you_order ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP",
+    ]
+    for stmt in fk_indexes:
+        await conn.execute(text(stmt))
+        
 async def init_db():
     from app import models  # noqa: F401 - so Base.metadata has all tables
     from app.settings_manager import initialize_settings

@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models."""
+﻿"""SQLAlchemy ORM models."""
 # // BEACON SYNC: This file handles tracking logic that Beacon mirrors.
 # // Any changes to tracking behavior, event types, metadata collected, or URL structure
 # // must also be reflected in the Beacon service (/beacon or the separate Beacon repo).
@@ -6,12 +6,14 @@
 
 import secrets
 import uuid
+from app.security import EncryptedText
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
@@ -56,8 +58,63 @@ class Organization(Base):
     name = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     users = relationship("User", back_populates="organization")
+    subscription = relationship("Subscription", back_populates="organization", uselist=False, cascade="all, delete-orphan")
 
+class AuditLog(Base):
+    """Immutable record of security-relevant actions across the platform.
 
+    Written by endpoint handlers after successful actions â€” never updated or
+    deleted (append-only by design). Scoped to org_id so each tenant only
+    sees their own audit trail.
+
+    action examples:
+        login, logout,
+        team.invite, team.role_changed, team.removed,
+        campaign.created, campaign.deleted, campaign.paused, campaign.resumed,
+        inbox.connected, inbox.disconnected,
+        webhook.created, webhook.deleted,
+        billing.checkout_started, billing.subscription_updated,
+        settings.changed
+    """
+    __tablename__ = "audit_log"
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("app_user.id"), nullable=True, index=True)
+    action = Column(String(128), nullable=False, index=True)
+    target_type = Column(String(64), nullable=True)   # e.g. "campaign", "inbox", "user"
+    target_id = Column(String(128), nullable=True)    # e.g. the campaign id or email
+    detail = Column(JSON, nullable=True)              # any extra context (old/new values etc.)
+    ip_address = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+class Subscription(Base):
+    """Stripe billing subscription for an Organization.
+
+    One row per org (uselist=False on the Organization side). Tracks the
+    Stripe-side identifiers and cached status/plan so the app can check
+    entitlements without calling Stripe on every request â€” the webhook
+    handler keeps this row in sync with Stripe as the source of truth.
+
+    Usage-limit enforcement (inbox/lead/email/AI caps per plan) is
+    deliberately NOT implemented yet â€” this table only tracks subscription
+    state. The access-gate itself is planned as a later, separate piece.
+    """
+    __tablename__ = "subscription"
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=False, unique=True, index=True)
+    stripe_customer_id = Column(String(255), nullable=True, index=True)
+    stripe_subscription_id = Column(String(255), nullable=True, index=True)
+    plan = Column(String(32), nullable=True)  # "starter" | "growth" | "scale" | "agency"
+    billing_period = Column(String(16), nullable=True)  # "monthly" | "annual"
+    status = Column(String(32), nullable=True, default="none")
+    # "none" | "trialing" | "active" | "past_due" | "canceled" | "incomplete" | "incomplete_expired" | "unpaid"
+    current_period_end = Column(DateTime, nullable=True)
+    cancel_at_period_end = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    organization = relationship("Organization", back_populates="subscription")
+    
 # ---------------------------------------------------------------------------
 # Authentication models
 # ---------------------------------------------------------------------------
@@ -82,6 +139,8 @@ class User(Base):
     notif_token_expiry = Column(DateTime, nullable=True)
     role = Column(String(32), default="user", nullable=False)  # admin or user (first user set explicitly to admin in router)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_verified = Column(Boolean, default=False, nullable=False)
+    is_owner = Column(Boolean, default=False, nullable=False)  # the org's original creator â€” protected from modification by other admins
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     organization = relationship("Organization", back_populates="users")
@@ -121,7 +180,12 @@ class Inbox(Base):
     max_emails_per_day = Column(Integer, default=50, nullable=False)
     wait_minutes_between = Column(Integer, default=5, nullable=False)  # Minutes between emails from this inbox
     max_jitter_seconds = Column(Integer, default=180, nullable=False)   # Max random seconds added to each send time (0 = disabled)
-    provider = Column(String(32), default="gmail")  # gmail | office365
+    provider = Column(String(32), default="gmail")  # gmail | office365 | smtp
+    smtp_host = Column(String(255), nullable=True, default=None)
+    smtp_port = Column(Integer, nullable=True, default=None)
+    smtp_username = Column(String(255), nullable=True, default=None)
+    smtp_password = Column(EncryptedText, nullable=True, default=None)
+    smtp_encryption = Column(String(16), nullable=True, default="starttls")
     # Custom tracking domain for this inbox (hostname only, e.g. "mail.client.com").
     # When set, open/click tracking URLs for emails sent from this inbox will use
     # https://<tracking_domain>/o/... instead of the app's own base URL.
@@ -191,6 +255,8 @@ class Campaign(Base):
     sending_hours_end = Column(String(5), default="17:00")   # 5pm
     wait_minutes_between = Column(Integer, default=5)  # Deprecated: wait time now controlled by Inbox.wait_minutes_between
     stop_on_reply = Column(Boolean, default=True)
+    campaign_mode = Column(String(16), default="manual", nullable=False, server_default="manual")
+    campaign_code = Column(String(16), nullable=True, unique=True)
     # Tracking toggles (default OFF for better deliverability)
     track_opens = Column(Boolean, default=False, nullable=False)
     track_clicks = Column(Boolean, default=False, nullable=False)
@@ -202,8 +268,11 @@ class Campaign(Base):
     # Timezone for scheduling (IANA timezone name, e.g. "America/New_York")
     timezone = Column(String(64), nullable=True, default=None)
     # Provider matching: when True, prefer inboxes whose provider matches the lead's email provider
-    # (Google leads → Gmail inboxes, Office 365 leads → Office 365 inboxes; falls back to any inbox)
+    # (Google leads â†’ Gmail inboxes, Office 365 leads â†’ Office 365 inboxes; falls back to any inbox)
     match_lead_provider = Column(Boolean, default=True, nullable=False)
+    # Complaint Rate Guardrail: auto-pause threshold (percent). Null = use the
+    # system default (see app/complaint_guardrail.py).
+    complaint_rate_threshold = Column(Float, nullable=True, default=None)
     # Custom sequence mode: wait_for_all (default) = don't send until all personalized
     # emails are written; asap = start sending each personalized email as soon as it's written
     custom_sequence_mode = Column(String(32), default="wait_for_all", nullable=False)
@@ -253,6 +322,7 @@ class Sequence(Base):
     sequence_type = Column(String(32), default="standard", nullable=False)  # standard | personalized
     fallback_subject = Column(String(512), nullable=True, default=None)  # fallback for personalized sequences
     fallback_body = Column(Text, nullable=True, default=None)  # fallback for personalized sequences
+    custom_id = Column(String(32), nullable=True, default=None)  # user-defined short ID (for reference/copy)
     campaign = relationship("Campaign", back_populates="sequences")
     variants = relationship(
         "SequenceVariant",
@@ -268,21 +338,25 @@ class SequenceVariant(Base):
     When a step has one or more enabled variants, the sender picks one at
     random (uniform distribution) instead of the step's default content.
     Both the default content AND named variants participate equally in the
-    random draw (i.e., default + N variants → N+1 options).
+    random draw (i.e., default + N variants â†’ N+1 options).
     """
     __tablename__ = "sequence_variant"
     id = Column(Integer, primary_key=True, index=True)
     sequence_id = Column(
-        Integer, ForeignKey("sequence.id", ondelete="CASCADE"), nullable=False, index=True
+        Integer, ForeignKey("sequence.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    node_id = Column(
+        Integer, ForeignKey("sequence_node.id", ondelete="CASCADE"), nullable=True, index=True
     )
     label = Column(String(64), nullable=False, default="")  # e.g. "A", "B", or a descriptive name
-    subject = Column(String(512), default=None)        # None → use sequence subject
+    subject = Column(String(512), default=None)        # None â†’ use sequence subject
     body = Column(Text, nullable=False, default="")
-    is_html = Column(Boolean, nullable=True, default=None)  # None → use sequence is_html
+    is_html = Column(Boolean, nullable=True, default=None)  # None â†’ use sequence is_html
     preview_text = Column(String(512), nullable=True, default=None)
     enabled = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
-    sequence = relationship("Sequence", back_populates="variants")
+    sequence = relationship("Sequence", back_populates="variants", foreign_keys=[sequence_id])
+    node = relationship("SequenceNode", foreign_keys=[node_id], backref="variants")
 
 
 class CampaignLead(Base):
@@ -299,17 +373,133 @@ class CampaignLead(Base):
     enrolled_at = Column(DateTime, default=_utcnow)
     # Per-campaign pipeline: active, contacted, completed, bounced, unsubscribed, wrong_person
     enrollment_status = Column(String(32), nullable=False, default="active")
+    # Set when enrollment_status becomes "bounced": hard, soft, block, or content.
+    bounce_type = Column(String(16), nullable=True, default=None)
     # Reply intent (per campaign): interested, not_interested, out_of_office, auto_reply, or null
     interest_status = Column(String(32), nullable=True, default=None)
     # Whether sending is paused for this specific campaign-lead pair
     # (e.g. auto-paused by AI classifier when marked not_interested)
     sending_paused = Column(Boolean, default=False, nullable=False)
+    # Which node the lead currently sits at in a branching sequence tree.
+    # Null for campaigns still using the old flat Sequence model.
+    current_node_id = Column(Integer, ForeignKey("sequence_node.id"), nullable=True, default=None)
+    # When to evaluate this lead's outgoing edges from current_node_id
+    # (i.e. check open/click status and schedule the next node). Null when
+    # there's nothing pending â€” either not in a tree campaign, or waiting
+    # on a send rather than an evaluation.
+    node_ready_at = Column(DateTime, nullable=True, default=None)
     campaign = relationship("Campaign", back_populates="campaign_leads")
     lead = relationship("Lead", back_populates="campaign_leads")
     queue_slots = relationship("QueueSlot", back_populates="campaign_lead", cascade="all, delete-orphan", order_by="QueueSlot.sequence_index")
     custom_email_overrides = relationship("CustomEmailOverride", back_populates="campaign_lead", cascade="all, delete-orphan")
 
 
+class SequenceNode(Base):
+    """A single email step in a branching sequence tree.
+
+    Replaces the flat position-based Sequence model for campaigns using
+    the visual branch builder. Each node holds the same content fields as
+    the old Sequence step; branching is expressed via SequenceEdge rows.
+    """
+    __tablename__ = "sequence_node"
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("campaign.id"), nullable=False, index=True)
+    is_root = Column(Boolean, default=False, nullable=False)  # entry point of the tree
+    label = Column(String(120), nullable=True, default=None)  # optional name shown on the canvas node
+    subject = Column(String(512), default=None)
+    body = Column(Text, nullable=False, default="")
+    is_html = Column(Boolean, nullable=True, default=None)
+    preview_text = Column(String(512), nullable=True, default=None)
+    # Canvas position, purely for the visual builder â€” has no effect on send logic
+    canvas_x = Column(Integer, nullable=True, default=None)
+    canvas_y = Column(Integer, nullable=True, default=None)
+    custom_id = Column(String(32), nullable=True, default=None)  # user-defined short ID e.g. "INIT", "FOLLOW1"
+    created_at = Column(DateTime, default=_utcnow)
+    campaign = relationship("Campaign")
+    outgoing_edges = relationship(
+        "SequenceEdge",
+        foreign_keys="SequenceEdge.from_node_id",
+        back_populates="from_node",
+        cascade="all, delete-orphan",
+    )
+
+class SequenceEdge(Base):
+    """A directed connection between two SequenceNodes with a send condition.
+
+    condition_type: 'always' | 'opened' | 'not_opened' | 'clicked' | 'not_clicked'
+    wait_days: days to wait after from_node's send (or after the condition
+    becomes decidable, e.g. after the open-tracking window) before evaluating
+    this edge and sending to_node.
+    """
+    __tablename__ = "sequence_edge"
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("campaign.id"), nullable=False, index=True)
+    from_node_id = Column(Integer, ForeignKey("sequence_node.id"), nullable=False, index=True)
+    to_node_id = Column(Integer, ForeignKey("sequence_node.id"), nullable=False, index=True)
+    condition_type = Column(String(32), nullable=False, default="always")
+    wait_days = Column(Integer, nullable=False, default=0)
+    wait_minutes = Column(Integer, nullable=False, default=0)  # sub-day wait; used when wait_days == 0
+    no_reply_minutes = Column(Integer, nullable=True, default=None)  # for opened_no_reply condition: threshold in minutes
+    created_at = Column(DateTime, default=_utcnow)
+    from_node = relationship("SequenceNode", foreign_keys=[from_node_id], back_populates="outgoing_edges")
+    to_node = relationship("SequenceNode", foreign_keys=[to_node_id])
+
+
+class PasswordResetToken(Base):
+    """A single-use, time-limited token for the forgot-password flow."""
+    __tablename__ = "password_reset_token"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("app_user.id"), nullable=False, index=True)
+    token = Column(String(128), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class EmailVerificationToken(Base):
+    """A single-use, time-limited token for confirming a new account email address."""
+    __tablename__ = "email_verification_token"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("app_user.id"), nullable=False, index=True)
+    token = Column(String(128), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class SuppressionEntry(Base):
+    """A globally suppressed email address for an organization â€” never
+    enrolled or sent to again in ANY campaign, regardless of source.
+
+    Auto-populated when a lead unsubscribes or an email hard-bounces.
+    Can also be added manually.
+    """
+    __tablename__ = "suppression_entry"
+    __table_args__ = (
+        UniqueConstraint("org_id", "email", name="uq_suppression_org_email"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    reason = Column(String(64), nullable=False, default="manual")  # unsubscribed | bounced | manual
+    source_campaign_id = Column(Integer, ForeignKey("campaign.id"), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+class UserInvitation(Base):
+    """An invitation for a new team member to join an existing organization
+    with a specific role â€” they set their own username/password via the link."""
+    __tablename__ = "user_invitation"
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    role = Column(String(32), nullable=False, default="user")
+    token = Column(String(128), nullable=False, unique=True, index=True)
+    invited_by_user_id = Column(Integer, ForeignKey("app_user.id"), nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    
+    
 class CustomEmailOverride(Base):
     """Per-lead custom content for a personalized sequence step.
 
@@ -339,6 +529,58 @@ class CustomEmailOverride(Base):
     sequence = relationship("Sequence")
 
 
+class FullAIDraft(Base):
+    """AI-written first-touch email waiting for human approval (Full AI mode).
+
+    Approving a draft copies subject/body into a CustomEmailOverride row so the
+    normal personalized-send path takes over.
+    """
+    __tablename__ = "full_ai_draft"
+    __table_args__ = (
+        UniqueConstraint("campaign_lead_id", name="uq_full_ai_draft_cl"),
+        Index("ix_full_ai_draft_status", "status"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_lead_id = Column(
+        Integer, ForeignKey("campaign_lead.id", ondelete="CASCADE"), nullable=False
+    )
+    subject = Column(String(512), nullable=False)
+    body = Column(Text, nullable=False)
+    status = Column(String(16), nullable=False, default="pending")  # pending | approved | rejected
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    campaign_lead = relationship("CampaignLead")
+
+
+# ---------------------------------------------------------------------------
+# AI Credits
+# ---------------------------------------------------------------------------
+BYPASS_ORGS_EMAILS = {
+    "arslanawan.dev@gmail.com",
+    "abdullahthewebbee@gmail.com",
+    "rehanthewebbee@gmail.com",
+    "hello@devlet.tech",
+}
+
+
+class AiCredits(Base):
+    """Per-org AI credit balance and model preference."""
+
+    __tablename__ = "ai_credits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(
+        Integer, ForeignKey("organization.id", ondelete="CASCADE"),
+        nullable=False, unique=True, index=True
+    )
+    credits_remaining = Column(Integer, nullable=False, default=0)
+    semi_manual_model = Column(String(32), nullable=False, default="gemini")
+    full_ai_model = Column(String(32), nullable=False, default="gemini")
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    org = relationship("Organization")
+
+
 class QueueSlot(Base):
     __tablename__ = "queue_slot"
     __table_args__ = (
@@ -358,10 +600,12 @@ class QueueSlot(Base):
     variant_id = Column(
         Integer, ForeignKey("sequence_variant.id", ondelete="SET NULL"), nullable=True, default=None
     )
+    # If set, this slot sends a SequenceNode (branch-tree campaign) instead of
+    # a flat Sequence step. Sending logic checks this first.
+    node_id = Column(Integer, ForeignKey("sequence_node.id"), nullable=True, default=None)
     campaign_lead = relationship("CampaignLead", back_populates="queue_slots")
     inbox = relationship("Inbox")
     variant = relationship("SequenceVariant", foreign_keys=[variant_id])
-
 
 class EmailLog(Base):
     __tablename__ = "email_log"
@@ -395,6 +639,10 @@ class EmailLog(Base):
     thread_id = Column(String(512), default=None)   # Gmail threadId for thread continuity
     opened = Column(Boolean, default=False, nullable=False)
     clicked = Column(Boolean, default=False, nullable=False)
+    # Send Autopsy: sending-domain SPF/DMARC config snapshot + content risk score at send time
+    auth_snapshot = Column(JSON, nullable=True, default=None)
+    content_risk_score = Column(Integer, nullable=True, default=None)
+    content_risk_flags = Column(JSON, nullable=True, default=None)
     lead = relationship("Lead", back_populates="email_logs")
     campaign = relationship("Campaign", back_populates="email_logs")
     inbox = relationship("Inbox")
@@ -418,6 +666,37 @@ class EmailLog(Base):
         back_populates="email_log",
         cascade="all, delete-orphan",
     )
+
+
+class BounceEvent(Base):
+    """A permanent, timestamped record of a bounce â€” independent of EmailLog's
+    lifecycle (EmailLog rows for failed sends are deleted elsewhere in the
+    codebase; this table exists purely so Domain Reputation Timeline and other
+    analytics have a reliable bounce history to chart)."""
+    __tablename__ = "bounce_event"
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("lead.id"), nullable=False, index=True)
+    campaign_id = Column(Integer, ForeignKey("campaign.id"), nullable=False, index=True)
+    inbox_id = Column(Integer, ForeignKey("inbox.id"), nullable=True, index=True)
+    bounce_type = Column(String(16), nullable=False)
+    error_message = Column(Text, nullable=True)
+    occurred_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class ComplaintEvent(Base):
+    """A permanent, timestamped record feeding the Complaint Rate Guardrail.
+
+    Real spam complaints require ISP Feedback Loop registration (Google
+    Postmaster Tools, Microsoft SNDS/JMRP) â€” not yet integrated. Until then,
+    ``source='unsubscribe_proxy'`` rows are logged whenever a lead unsubscribes,
+    used as an interim proxy signal. A future FBL integration can record
+    ``source='fbl'`` rows here without any change to the guardrail logic."""
+    __tablename__ = "complaint_event"
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("lead.id"), nullable=False, index=True)
+    campaign_id = Column(Integer, ForeignKey("campaign.id"), nullable=False, index=True)
+    source = Column(String(32), nullable=False, default="unsubscribe_proxy")
+    occurred_at = Column(DateTime, default=_utcnow, index=True)
 
 
 class LeadUnsubscribeToken(Base):
@@ -510,13 +789,14 @@ class AppSetting(Base):
     """Key-value store for application settings (e.g. OAuth credentials).
 
     Keeps sensitive config in the database instead of .env so the
-    frontend never needs direct filesystem access.
+    frontend never needs direct filesystem access. Values are encrypted
+    at rest (EncryptedText) since this table holds OAuth client secrets,
+    AI provider API keys, and webhook tokens.
     """
     __tablename__ = "app_setting"
     key = Column(String(255), primary_key=True, nullable=False)
-    value = Column(Text, nullable=False, default="")
+    value = Column(EncryptedText, nullable=False, default="")
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
-
 
 class GmailAccount(Base):
     """Stores Gmail/G Suite OAuth 2.0 tokens linked to an Inbox."""
@@ -564,6 +844,8 @@ class GmailThread(Base):
     last_internal_date = Column(BigInteger, nullable=True)
     # Lead notification tracking
     is_lead_thread = Column(Boolean, default=False, nullable=False)
+    hidden = Column(Boolean, default=False, nullable=False, server_default='false')
+    hidden = Column(Boolean, default=False, nullable=False, server_default='false')
     unread_lead_reply = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -685,6 +967,7 @@ class Office365Thread(Base):
     subject = Column(Text, default="")
     last_received_at = Column(DateTime, nullable=True)
     is_lead_thread = Column(Boolean, default=False, nullable=False)
+    hidden = Column(Boolean, default=False, nullable=False, server_default='false')
     unread_lead_reply = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -870,4 +1153,75 @@ WEBHOOK_EVENT_TYPES = [
     "daily_limit",         # An inbox hit its daily sending limit
     "rate_limit",          # A rate limit violation was detected
     "token_expired",       # A Gmail OAuth token could not be refreshed
+    "campaign.paused_complaint_rate",  # Complaint Rate Guardrail auto-paused a campaign
+    "campaign_health.high_bounce_rate",  # Campaign Health Watchdog: bounce rate crossed threshold
+    "campaign_health.low_open_rate",     # Campaign Health Watchdog: open rate fell below threshold
+    "lead.added_via_extension",  # Browser Extension: lead added via 1-click LinkedIn/web capture
 ]
+
+
+class DoneForYouOrder(Base):
+    """Customer request for a managed domain/inbox/DNS/warm-up setup."""
+    __tablename__ = "done_for_you_order"
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
+    created_by = Column(Integer, ForeignKey("app_user.id"), nullable=True)
+    business_name = Column(String(255), nullable=False)
+    website = Column(String(255), default="")
+    provider = Column(String(16), default="google", nullable=False)  # google | microsoft | mixed
+    domains_count = Column(Integer, default=1, nullable=False)
+    inboxes_per_domain = Column(Integer, default=1, nullable=False)
+    daily_volume = Column(Integer, default=0, nullable=False)
+    preferred_domains = Column(JSON, default=list)
+    extra_setup = Column(JSON, default=list)  # extra Settings features the customer wants configured
+    notes = Column(Text, default="")
+    # submitted | in_review | awaiting_customer | in_progress | completed | cancelled
+    status = Column(String(24), default="submitted", nullable=False, index=True)
+    message = Column(Text, default="")  # shown to the customer
+    # Payment (one-time Stripe Checkout). New orders start as status "pending_payment".
+    amount_cents = Column(Integer, default=0, nullable=False)
+    payment_status = Column(String(16), default="unpaid", nullable=False)  # unpaid | paid | refunded
+    stripe_session_id = Column(String(255), nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow)
+
+
+class VisitorSite(Base):
+    """A website the org tracks with the visitor-ID script."""
+    __tablename__ = "visitor_site"
+    __table_args__ = (UniqueConstraint("org_id", "domain", name="uq_visitor_site_org_domain"),)
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
+    name = Column(String(255), default="")
+    domain = Column(String(255), nullable=False)
+    public_key = Column(String(64), unique=True, nullable=False, index=True, default=lambda: secrets.token_urlsafe(16))
+    last_event_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class Visitor(Base):
+    """A (possibly identified) visitor of a tracked website."""
+    __tablename__ = "visitor"
+    __table_args__ = (
+        UniqueConstraint("site_id", "visitor_key", name="uq_visitor_site_key"),
+        Index("ix_visitor_org_last_seen", "org_id", "last_seen"),
+        Index("ix_visitor_by_site", "site_id"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
+    site_id = Column(Integer, ForeignKey("visitor_site.id"), nullable=False)
+    visitor_key = Column(String(64), nullable=False)
+    name = Column(String(255), default="")
+    email = Column(String(255), nullable=True, index=True)
+    company = Column(String(255), default="")
+    title = Column(String(255), default="")
+    location = Column(String(255), default="")
+    identified = Column(Boolean, default=False, nullable=False)
+    pages_viewed = Column(Integer, default=0, nullable=False)
+    visits = Column(Integer, default=1, nullable=False)
+    last_url = Column(Text, default="")
+    referrer = Column(Text, default="")
+    lead_id = Column(Integer, ForeignKey("lead.id"), nullable=True)
+    first_seen = Column(DateTime, default=_utcnow)
+    last_seen = Column(DateTime, default=_utcnow)

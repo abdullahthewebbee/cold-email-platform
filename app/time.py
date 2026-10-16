@@ -10,7 +10,7 @@ The offset is taken (in days) from `app.settings_manager.settings.time_offset_da
 be persisted via the existing AppSetting mechanism. The module provides helpers to
 set/reset the persisted offset from scripts.
 """
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 from app.settings_manager import settings
 
@@ -25,8 +25,9 @@ def now() -> datetime:
 
 
 def utcnow() -> datetime:
-    """UTC now adjusted by configured offset."""
-    return datetime.utcnow() + _offset_timedelta()
+    """UTC now adjusted by configured offset (naive datetime, treated as UTC by convention —
+    the rest of the codebase stores and compares naive-UTC datetimes throughout)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None) + _offset_timedelta()
 
 
 def today() -> date:

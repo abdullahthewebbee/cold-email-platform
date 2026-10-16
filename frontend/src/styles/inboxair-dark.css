@@ -1,0 +1,155 @@
+/* ═══════════════════════════════════════════════════════════════
+   InboxAir — Dark theme (minimal, neat, modern)
+   Load LAST (after inboxair-density.css). Same sidebar/menu/layout —
+   only colours, radii, type and card/hero/table/input look change.
+   Every page already reads these tokens, so no JSX changes are needed.
+   ═══════════════════════════════════════════════════════════════ */
+:root, :root[data-theme="dark"], :root[data-theme="light"] {
+  color-scheme: dark;
+
+  /* Accent: blue (replaces gold) */
+  --gold:        #0a84ff;
+  --gold-light:  #5eb0ff;
+  --gold-dark:   #0a84ff;
+  --primary:     #ececee;
+  --primary-mid: #d4d4d8;
+  --primary-light:#a1a1a8;
+
+  /* Status */
+  --green:#30d158; --green-light:rgba(48,209,88,.14);  --green-dark:#30d158;
+  --red:#ff5a52;   --red-light:rgba(255,90,82,.14);    --red-dark:#ff7b74;
+  --orange:#ffb340;--orange-light:rgba(255,179,64,.14);--orange-dark:#ffb340;
+  --blue:#0a84ff;  --blue-light:rgba(10,132,255,.14);  --blue-dark:#5eb0ff;
+  --purple:#b18cff;--purple-light:rgba(177,140,255,.14);--purple-dark:#c4a6ff;
+  --teal:#35d0ba;  --teal-light:rgba(53,208,186,.14);  --teal-dark:#35d0ba;
+  --emergency:#ff5a52; --emergency-light:rgba(255,90,82,.14); --emergency-dark:#ff7b74;
+
+  /* Surfaces */
+  --bg:#0b0b0c; --bg-2:#0f0f11;
+  --surface:#141416; --surface-2:#1a1a1d; --surface-2-rgb:26,26,29;
+  --surface-3:#222226; --surface-4:#2e2e33;
+  --border:#232327; --border-dark:#2e2e33;
+
+  /* Text */
+  --text:#ececee; --text-2:#c4c4ca; --text-3:#a1a1a8; --text-4:#6f6f77;
+  --text-inverted:#ffffff;
+
+  /* Soft / fade borders */
+  --soft-gold:rgba(10,132,255,.5);  --fade-gold:rgba(10,132,255,.35);
+  --soft-green:rgba(48,209,88,.45); --fade-green:rgba(48,209,88,.3);
+  --soft-blue:rgba(10,132,255,.5);  --fade-blue:rgba(10,132,255,.35);
+  --soft-red:rgba(255,90,82,.5);    --fade-red:rgba(255,90,82,.35);
+  --soft-orange:rgba(255,179,64,.5);--fade-orange:rgba(255,179,64,.35);
+
+  /* Type: sans everywhere */
+  --font-serif:'Inter','Helvetica Neue',Arial,sans-serif;
+
+  /* Shape */
+  --radius-xs:4px; --radius-sm:8px; --radius:10px; --radius-lg:12px; --radius-xl:14px;
+
+  /* Shadows → almost flat */
+  --shadow-xs:none; --shadow-sm:none; --shadow:0 4px 16px rgba(0,0,0,.35);
+  --shadow-lg:0 8px 28px rgba(0,0,0,.45); --shadow-xl:0 16px 48px rgba(0,0,0,.55);
+  --shadow-gold:none; --shadow-red:none; --shadow-green:none; --shadow-emergency:none;
+
+  /* Icon boxes / badges / focus */
+  --icon-bg-gold:rgba(10,132,255,.14); --icon-bg-gold-active:rgba(10,132,255,.2);
+  --icon-bg-blue:rgba(10,132,255,.14); --icon-bg-green:rgba(48,209,88,.14);
+  --icon-bg-purple:rgba(177,140,255,.14); --icon-bg-orange:rgba(255,179,64,.14);
+  --icon-bg-red:rgba(255,90,82,.14); --icon-bg-teal:rgba(53,208,186,.14);
+  --badge-bg-gold:rgba(10,132,255,.14); --badge-border-gold:rgba(10,132,255,.3);
+  --focus-ring:0 0 0 3px rgba(10,132,255,.22);
+  --focus-ring-checkbox:0 0 0 3px rgba(10,132,255,.28);
+  --modal-overlay-bg:rgba(0,0,0,.62);
+  --toast-bg:#26262a; --toast-text:#ececee;
+
+  /* Charts */
+  --chart-sent:#4a4a52; --chart-opened:#0a84ff; --chart-opened-unique:#5eb0ff;
+  --chart-clicked:#b18cff; --chart-clicked-unique:#c4a6ff;
+  --chart-replied:#30d158; --chart-bounced:#ff5a52;
+}
+
+html, body { background:var(--bg); color:var(--text); }
+body { font-size:13px; }
+h1, h2, h3, h4 { font-family:var(--font-sans) !important; letter-spacing:-.01em; }
+::selection { background:rgba(10,132,255,.35); }
+* { scrollbar-color:#2e2e33 transparent; }
+
+/* ── Sidebar (same menu, dark) ── */
+.sidebar { background:var(--surface) !important; border-right:1px solid var(--border) !important; }
+.sidebar-brand-name { font-family:var(--font-sans) !important; font-weight:700; letter-spacing:-.02em; color:var(--text) !important; }
+.sidebar-brand-dot, .sb-dot { background:var(--gold) !important; }
+.nav-item { color:var(--text-3) !important; border-radius:8px !important; }
+.nav-item:hover { background:var(--surface-2) !important; color:var(--text) !important; text-decoration:none !important; }
+.nav-item.active { background:var(--surface-2) !important; color:var(--text) !important; font-weight:500 !important; }
+.nav-item.active::before, .nav-item.active::after { background:var(--gold) !important; }
+.nav-item .nav-icon, .nav-item.active .nav-icon { background:transparent !important; color:var(--text-4) !important; }
+.nav-item:hover .nav-icon { color:var(--text-2) !important; }
+.nav-item.active .nav-icon { color:var(--gold) !important; }
+.sidebar-footer { border-top:1px solid var(--border) !important; background:transparent !important; }
+.dropdown-menu { background:var(--surface-2) !important; border:1px solid var(--border-dark) !important; box-shadow:var(--shadow-lg) !important; }
+.dropdown-item { color:var(--text-2) !important; }
+.dropdown-item:hover { background:var(--surface-3) !important; color:var(--text) !important; }
+
+/* ── Page hero: flat, no accent bar, no big serif ── */
+.hero-banner, .hero-banner.is-quiet {
+  background:var(--surface) !important; border:1px solid var(--border) !important;
+  border-radius:var(--radius) !important; padding:18px 22px !important; box-shadow:none !important;
+}
+.hero-banner::before, .hero-banner.is-quiet::before { display:none !important; }
+.hero-banner.is-quiet .page-hero-title, .page-hero-title { font-size:20px !important; line-height:1.2 !important; font-weight:600 !important; color:var(--text) !important; margin-bottom:4px !important; }
+.hero-banner.is-quiet .page-hero-eyebrow, .page-hero-eyebrow { color:var(--gold) !important; font-size:10.5px !important; letter-spacing:.08em !important; }
+.hero-banner.is-quiet .page-hero-sub, .page-hero-sub { color:var(--text-3) !important; font-size:13px !important; }
+.hero-meta-item, .hero-banner.is-quiet .hero-meta-item { color:var(--text-3) !important; }
+
+/* ── Cards, stat chips, panels ── */
+.card, .stat-chip, .do-card, .modal, .modal-content {
+  background:var(--surface) !important; border:1px solid var(--border) !important;
+  border-radius:var(--radius) !important; box-shadow:none !important;
+}
+.card:hover, .stat-chip:hover { border-color:var(--border-dark) !important; transform:none !important; }
+.card-header { border-bottom:1px solid var(--border) !important; background:transparent !important; }
+.card-title, .stat-chip-label { color:var(--text-3) !important; font-weight:500 !important; text-transform:none !important; letter-spacing:0 !important; }
+.stat-chip-value { font-family:var(--font-sans) !important; font-weight:600 !important; color:var(--text) !important; letter-spacing:-.02em; }
+.stat-chip-icon { background:var(--surface-2) !important; color:var(--gold) !important; border-radius:8px !important; }
+
+/* ── Buttons ── */
+.btn { border-radius:8px !important; font-weight:500 !important; box-shadow:none !important; }
+.btn-primary, .btn-hero-solid, .btn-gold {
+  background:var(--gold) !important; border:1px solid var(--gold) !important; color:#fff !important;
+}
+.btn-primary:hover, .btn-hero-solid:hover, .btn-gold:hover { background:#2b95ff !important; border-color:#2b95ff !important; }
+.btn-secondary, .btn-outline, .btn-ghost, .btn-hero-ghost, .btn-hero-ghost.is-on-light {
+  background:var(--surface) !important; border:1px solid var(--border-dark) !important; color:var(--text) !important;
+}
+.btn-secondary:hover, .btn-outline:hover, .btn-ghost:hover, .btn-hero-ghost:hover { background:var(--surface-2) !important; }
+.hero-banner.is-quiet .btn-hero-solid.is-on-light { background:var(--gold) !important; color:#fff !important; border-color:var(--gold) !important; }
+
+/* ── Inputs / selects / search ── */
+input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea, .form-input, .form-select {
+  background:var(--surface) !important; color:var(--text) !important;
+  border:1px solid var(--border-dark) !important; border-radius:8px !important; box-shadow:none !important;
+}
+input::placeholder, textarea::placeholder { color:var(--text-4) !important; }
+input:focus, select:focus, textarea:focus { border-color:var(--gold) !important; box-shadow:var(--focus-ring) !important; outline:none !important; }
+option { background:var(--surface-2); color:var(--text); }
+
+/* ── Tables ── */
+.table th { background:transparent !important; color:var(--text-4) !important; font-weight:500 !important; text-transform:none !important; letter-spacing:0 !important; border-bottom:1px solid var(--border) !important; }
+.table td { border-top:1px solid var(--border) !important; color:var(--text-2); }
+.table tbody tr:hover td { background:var(--surface-2) !important; }
+
+/* ── Badges / pills / tabs / progress ── */
+.badge { border-radius:99px !important; font-weight:500 !important; }
+.tab-pill { background:transparent !important; color:var(--text-3) !important; border:1px solid transparent !important; border-radius:8px !important; }
+.tab-pill:hover { background:var(--surface-2) !important; color:var(--text) !important; }
+.tab-pill.active { background:var(--surface-2) !important; color:var(--text) !important; border-color:var(--border-dark) !important; }
+.progress { background:var(--surface-3) !important; }
+.progress-bar, .progress > div { background:var(--gold) !important; }
+button.toggle { background:var(--surface-3) !important; }
+button.toggle.on, button.toggle.active, button.toggle[aria-checked="true"] { background:var(--gold) !important; }
+
+/* ── Misc ── */
+hr, .divider { border-color:var(--border) !important; }
+.do-dotted, [style*="dotted"] { text-decoration:none !important; }
+a:hover { text-decoration:none; }

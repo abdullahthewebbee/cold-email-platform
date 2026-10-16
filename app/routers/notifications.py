@@ -13,7 +13,11 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import EmailNotificationConfig, Notification, WEBHOOK_EVENT_TYPES
 from app.notifications import get_unread_notification_count
-
+from app.notifications import get_unread_notification_count, notification_events
+import asyncio
+import json
+from fastapi import Request
+from fastapi.responses import StreamingResponse
 log = logging.getLogger("quickly.notifications.routes")
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -116,6 +120,8 @@ async def mark_notification_read(
     from app.time import utcnow
     notif.read_at = utcnow()
     await db.flush()
+    from app.cache import cache_invalidate
+    await cache_invalidate(f"unread:{user.id}")
     return {"ok": True}
 
 
@@ -135,6 +141,8 @@ async def mark_all_read(
     for notif in result.scalars().all():
         notif.read_at = utcnow()
     await db.flush()
+    from app.cache import cache_invalidate
+    await cache_invalidate(f"unread:{user.id}")
     return {"ok": True}
 
 
@@ -164,9 +172,24 @@ async def unread_count(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return the number of unread notifications for the current user."""
+    """Return the number of unread notifications for the current user.
+
+    Cached for 10s in Redis — the frontend polls this every ~15s per open tab,
+    so without caching every tab generates a COUNT query continuously. A 10s
+    TTL keeps the badge feeling live while absorbing nearly all polling load.
+    Cache is per-user, so no cross-tenant leakage is possible.
+    """
+    from app.cache import cache_get_json, cache_set_json
+
+    cache_key = f"unread:{user.id}"
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+
     count = await get_unread_notification_count(db, user.id)
-    return {"unread": count}
+    result = {"unread": count}
+    await cache_set_json(cache_key, result, ttl=10)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -216,3 +239,31 @@ async def update_notification_config(
     config.rate_limit_per_hour = data.rate_limit_per_hour
     await db.flush()
     return config
+
+
+
+@router.get("/events")
+async def notification_events_sse(request: Request, user=Depends(get_current_user)):
+    """SSE endpoint — pushes real-time notification events to the connected client."""
+    queue = await notification_events.subscribe(user.id)
+
+    async def stream():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                data = json.dumps(event, default=str)
+                yield f"event: notification.new\ndata: {data}\n\n"
+        finally:
+            await notification_events.unsubscribe(user.id, queue)
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+    }
+    return StreamingResponse(stream(), media_type="text/event-stream", headers=headers)

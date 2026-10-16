@@ -1,0 +1,298 @@
+/* ═══════════════════════════════════════════════════════════════
+   InboxAir — component looks, written against EXISTING class names
+   only (the ones defined in do-compat.css). Colour, font, border and
+   hover/focus only: no sizes, positions or markup change.
+   Page-specific classes are added per page in Step 5.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* cards + chart card */
+.do-card, .do-chartcard {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+/* card titles: gold, uppercase eyebrow style (size untouched) */
+.do-card-title, .do-ui-cardtitle {
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+/* do-compat.css forces 21px with !important; the InboxAir spec is a small uppercase eyebrow */
+.do-card-title, .do-ui-cardtitle { font-size: 14px !important; line-height: 1.3; }
+.do-ui-cardsub { color: var(--text-muted); }
+
+/* hero / page titles use the display face */
+.do-hero-title, .cd-hero-title { font-family: var(--font-display); font-weight: 700; color: var(--text); }
+.do-hero-eyebrow { color: var(--gold); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
+
+/* labels and stat numbers */
+.do-ui-label, .do-statcard-label, .cd-kpi-label, .st-field-label {
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.do-statcard-val, .cd-kpi-value, .do-legend-count, .do-chart-tip-val {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+/* badges */
+.do-badge { border-radius: 20px; letter-spacing: 0.04em; }
+
+/* chart tooltip + range controls */
+.do-chart-tip { background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); box-shadow: var(--shadow-pop); }
+.do-chart-tip-date { color: var(--text-muted); }
+
+/* banner */
+.do-billing-banner { background: var(--accent-dim); color: var(--text); }
+
+/* tables */
+.tm-table th, .do-tbl th {
+  background: var(--bg-elevated);
+  color: var(--gold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.tm-table td, .do-tbl td { border-bottom: 1px solid var(--border); }
+.tm-table tbody tr:hover, .do-tbl tbody tr:hover { background: var(--gold-dim); }
+
+/* form controls (global, inherit existing sizes) */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+select, textarea {
+  background: var(--bg-input);
+  border-color: var(--border);
+  color: var(--text);
+}
+input:focus, select:focus, textarea:focus { border-color: var(--border-active); outline: none; }
+
+/* keyboard focus */
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   Classes the pages use that no stylesheet in the project defined
+   (found by scanning every className). Looks follow the InboxAir
+   spec; no markup changes.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* buttons */
+.do-btn-gold, .do-btn-hero,
+.do-btn-outline, .do-btn-hero-outline {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.2;
+  padding: 8px 14px; border-radius: 8px; border: 1px solid transparent;
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.do-btn-gold, .do-btn-hero { background: var(--gold); color: var(--on-gold); }
+.do-btn-gold:hover:not(:disabled), .do-btn-hero:hover { background: var(--gold-light); text-decoration: none; }
+.do-btn-outline, .do-btn-hero-outline { background: transparent; color: var(--gold); border-color: var(--border-active); }
+.do-btn-outline:hover:not(:disabled), .do-btn-hero-outline:hover { background: var(--gold-dim); border-color: var(--gold); text-decoration: none; }
+.do-btn-gold:disabled, .do-btn-outline:disabled { opacity: .5; cursor: not-allowed; }
+
+/* hero action row */
+.do-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; margin-bottom: 20px; }
+
+/* card head / body */
+.do-card { overflow: hidden; }
+.do-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+}
+.do-card-body { padding: 16px 20px; }
+
+/* status pills */
+.do-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  padding: 2px 10px; white-space: nowrap;
+  background: var(--bg-input); color: var(--text-muted);
+}
+.do-pill-gold   { background: var(--gold-dim);    color: var(--gold); }
+.do-pill-green  { background: var(--success-dim); color: var(--success); }
+.do-pill-orange { background: var(--warning-dim); color: var(--warning); }
+.do-pill-red    { background: var(--danger-dim);  color: var(--danger); }
+.do-pill-blue   { background: var(--info-dim);    color: var(--info); }
+.do-pill-gray   { background: var(--bg-input);    color: var(--text-muted); }
+
+/* filter chips */
+.do-preset-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit; font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--text-muted); border: 1px solid var(--border);
+  transition: background .12s, color .12s, border-color .12s;
+}
+.do-preset-pill:hover { background: var(--gold-hover); color: var(--text); }
+
+/* progress bar */
+.do-prog-bar { height: 6px; border-radius: 99px; background: var(--bg-input); overflow: hidden; }
+.do-prog-fill { height: 100%; border-radius: 99px; background: var(--gold); transition: width .3s ease; }
+
+/* stat chips (Queue page) */
+.do-stat-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.do-stat-chip {
+  display: flex; align-items: center; gap: 12px; min-width: 160px;
+  padding: 12px 16px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px;
+}
+.do-stat-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.do-stat-val { font-size: 22px; font-weight: 600; line-height: 1.2; color: var(--text); font-variant-numeric: tabular-nums; }
+.do-stat-label { font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+
+/* ── Match mockup: Analytics surfaces (page-level <style> blocks load later, hence !important) ── */
+.do-statcard {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  padding: 16px 18px !important;
+  box-shadow: none !important;
+}
+.do-statcard:hover {
+  transform: none !important;
+  border-color: var(--border-active) !important;
+  box-shadow: none !important;
+}
+.do-statcard-top { margin-bottom: 10px !important; }
+.do-statcard-icon { width: 32px !important; height: 32px !important; border-radius: 8px !important; }
+.do-statcard-val {
+  font-family: var(--font-ui) !important;
+  font-size: 26px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+  font-variant-numeric: tabular-nums;
+  color: var(--text) !important;
+}
+.do-statcard-label {
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
+  color: var(--text-muted) !important;
+}
+/* chart plot area sits on the card surface, not a black hole */
+.do-chart-wrap {
+  background: var(--bg-elevated) !important;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Compact stat cards + reference-style chart legend/title ── */
+.do-statcard { padding: 12px 16px !important; }
+.do-statcard-top { margin-bottom: 6px !important; }
+.do-statcard-icon { width: 24px !important; height: 24px !important; border-radius: 6px !important; }
+.do-statcard-icon svg { width: 14px !important; height: 14px !important; }
+.do-statcard-top svg[width="80"], .do-statcard-top > svg:last-child { max-height: 20px; }
+.do-statcard-val { font-size: 24px !important; line-height: 1.15 !important; }
+.do-statcard-label { margin-top: 2px !important; font-size: 10px !important; }
+.do-statcard-row { gap: 12px !important; margin-bottom: 16px !important; }
+
+.do-chart-head { padding: 12px 18px !important; }
+.do-chart-title {
+  font-family: var(--font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold) !important;
+}
+.do-chart-wrap { padding: 12px 14px 6px !important; border-radius: 0 !important; }
+
+/* legend: plain dot + name, no pill boxes */
+.do-legend {
+  padding: 10px 18px 14px !important;
+  gap: 6px 18px !important;
+  justify-content: flex-start;
+}
+.do-legend-btn {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  gap: 6px !important;
+}
+.do-legend-btn:hover { background: transparent !important; }
+.do-legend-btn:hover .do-legend-name { color: var(--text) !important; }
+.do-legend-swatch { width: 8px !important; height: 8px !important; border-radius: 50% !important; }
+.do-legend-name { font-size: 12px !important; color: var(--text-muted) !important; font-weight: 500 !important; }
+.do-legend-count {
+  font-family: var(--font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--text) !important;
+  letter-spacing: 0 !important;
+}
+
+/* legend: force single inline row (do-compat made it a column grid) */
+.do-legend { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; background: var(--bg-elevated) !important; overflow: visible !important; }
+.do-legend-btn { display: inline-flex !important; flex-direction: row !important; align-items: center !important; position: static !important; }
+.do-legend-btn::before { display: none !important; }
+.do-legend-name { text-transform: none !important; letter-spacing: 0 !important; }
+.do-legend-count { margin-left: 2px; }
+
+/* empty-state chart: keep dates / axis readable */
+.do-chart-wrap > div:not(.do-chart-empty) { opacity: 1 !important; }
+.do-chart-wrap .recharts-cartesian-axis-tick text { fill: var(--text-muted) !important; font-family: var(--font-ui) !important; font-size: 11px !important; font-weight: 500 !important; }
+.do-chart-wrap .recharts-cartesian-grid line { stroke: var(--border) !important; }
+.do-chart-wrap .recharts-surface { opacity: 1; }
+
+/* ── One scrollbar only: the page frame never scrolls, pages scroll inside it ── */
+html, body, #root { height: 100%; overflow: hidden !important; }
+.do-chart-wrap::-webkit-scrollbar { display: none; }
+
+/* tighter side gutters on the Analytics scroller (its root has an inline 24px 28px padding) */
+/* Layout.jsx already scrolls and pads (20px 24px): the Analytics root must not add a 2nd scroller or 2nd padding */
+div[style*="padding: 24px 28px"], div[style*="padding:24px 28px"] { padding: 0 !important; overflow: visible !important; flex: none !important; min-height: auto !important; }
+/* slim, themed scrollbar for in-page scrollers */
+* { scrollbar-width: thin; scrollbar-color: var(--border-active) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border-active); border-radius: 8px; }
+
+/* ── Legend as compact stat tiles (counts stay prominent) ── */
+.do-legend {
+  display: grid !important;
+  grid-template-columns: repeat(6, 1fr) !important;
+  gap: 10px !important;
+  padding: 12px 14px 14px !important;
+}
+@media (max-width: 900px) { .do-legend { grid-template-columns: repeat(3, 1fr) !important; } }
+@media (max-width: 520px) { .do-legend { grid-template-columns: repeat(2, 1fr) !important; } }
+.do-legend-btn {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  align-items: flex-start !important;
+  gap: 2px !important;
+  padding: 12px 14px 10px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  background: var(--bg) !important;
+  overflow: hidden;
+}
+.do-legend-btn:hover { background: var(--bg) !important; border-color: var(--border-active) !important; }
+.do-legend-swatch { position: absolute !important; top: 0; left: 0; right: 0; width: auto !important; height: 3px !important; border-radius: 0 !important; }
+.do-legend-name { font-size: 10.5px !important; font-weight: 600 !important; letter-spacing: 0.08em !important; text-transform: uppercase !important; color: var(--text-muted) !important; }
+.do-legend-count { font-size: 22px !important; font-weight: 600 !important; line-height: 1.1; margin: 0 !important; font-variant-numeric: tabular-nums; }
+
+/* ── Single scroller for every page whose root scrolls itself (Layout.jsx already scrolls + pads) ── */
+div[style*="padding: 20px 24px"] > .overflow-y-auto,
+div[style*="padding: 20px 24px"] > div[style*="overflow-y: auto"],
+div[style*="padding: 20px 24px"] > div[style*="overflow-y:auto"] {
+  overflow: visible !important;
+  flex: none !important;
+  min-height: auto !important;
+  padding: 0 !important;
+}
+/* tighter vertical rhythm between stacked sections */
+div[style*="padding: 20px 24px"] > .space-y-5 > * + *,
+div[style*="padding: 20px 24px"] > .space-y-6 > * + *,
+div[style*="padding: 20px 24px"] > .space-y-4 > * + * { margin-top: 12px !important; }
+div[style*="padding: 20px 24px"] > .space-y-5 { --tw-space-y-reverse: 0; }
+
+/* tables: themed borders instead of white */
+.do-card table, .do-card th, .do-card td { border-color: var(--border) !important; }
+th, td { border-color: var(--border); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--gold); }
+

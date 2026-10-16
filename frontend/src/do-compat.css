@@ -1,0 +1,1154 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/* ═══════════════════════════════════════════════════════════════
+   InboxAir — Tailwind Compatibility Layer
+   ───────────────────────────────────────────────────────────────
+   The project uses ~349 Tailwind utility classes across 17 files,
+   but Tailwind is NOT installed. This file implements every one of
+   them using the --do-* design tokens, so they render correctly
+   and stay theme-aware in BOTH light and dark mode.
+
+   Brand remap:  teal-*  →  gold   (teal is off-brand)
+                 gray-*  →  --do-text* / --do-surface / --do-border
+
+   HOW TO USE
+   ----------
+   1. Save as:  frontend/src/do-compat.css
+   2. In frontend/src/main.jsx (or App.jsx) add AFTER index.css:
+         import './index.css';
+         import './do-compat.css';     ← must come second
+   ═══════════════════════════════════════════════════════════════ */
+
+
+/* ══ 1. LAYOUT / DISPLAY ════════════════════════════════════════ */
+.block         { display: block; }
+.inline        { display: inline; }
+.inline-block  { display: inline-block; }
+.flex          { display: flex; }
+.inline-flex   { display: inline-flex; }
+.grid          { display: grid; }
+.hidden        { display: none; }
+
+.flex-1        { flex: 1 1 0%; }
+.flex-col      { flex-direction: column; }
+.flex-wrap     { flex-wrap: wrap; }
+.flex-shrink-0,
+.shrink-0      { flex-shrink: 0; }
+.grow          { flex-grow: 1; }
+
+.items-center  { align-items: center; }
+.items-start   { align-items: flex-start; }
+.items-end     { align-items: flex-end; }
+.justify-center  { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.justify-end     { justify-content: flex-end; }
+.justify-start   { justify-content: flex-start; }
+.self-end      { align-self: flex-end; }
+.self-start    { align-self: flex-start; }
+
+.grid-cols-1   { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+.grid-cols-2   { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-cols-3   { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid-cols-4   { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.grid-cols-7   { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+@media (min-width: 768px) {
+  .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .grid-cols-7 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+
+/* ══ 2. POSITION ════════════════════════════════════════════════ */
+.relative  { position: relative; }
+.absolute  { position: absolute; }
+.fixed     { position: fixed; }
+.sticky    { position: sticky; }
+
+.inset-0   { inset: 0; }
+.top-0     { top: 0; }
+.top-3     { top: 0.75rem; }
+.top-full  { top: 100%; }
+.right-3   { right: 0.75rem; }
+.bottom-2  { bottom: 0.5rem; }
+.left-1\/2 { left: 50%; }
+
+.z-10      { z-index: 10; }
+.z-20      { z-index: 20; }
+.z-50      { z-index: 50; }
+.z-\[60\]  { z-index: 60; }
+.z-\[9999\]{ z-index: 9999; }
+
+.pointer-events-none { pointer-events: none; }
+
+
+/* ══ 3. SPACING — padding ═══════════════════════════════════════ */
+.p-1   { padding: 0.25rem; }
+.p-2   { padding: 0.5rem; }
+.p-3   { padding: 0.75rem; }
+.p-4   { padding: 1rem; }
+.p-5   { padding: 1.25rem; }
+.p-6   { padding: 1.5rem; }
+.p-8   { padding: 2rem; }
+
+.px-0\.5 { padding-left: 0.125rem; padding-right: 0.125rem; }
+.px-1    { padding-left: 0.25rem;  padding-right: 0.25rem; }
+.px-1\.5 { padding-left: 0.375rem; padding-right: 0.375rem; }
+.px-2    { padding-left: 0.5rem;   padding-right: 0.5rem; }
+.px-2\.5 { padding-left: 0.625rem; padding-right: 0.625rem; }
+.px-3    { padding-left: 0.75rem;  padding-right: 0.75rem; }
+.px-4    { padding-left: 1rem;     padding-right: 1rem; }
+.px-5    { padding-left: 1.25rem;  padding-right: 1.25rem; }
+.px-6    { padding-left: 1.5rem;   padding-right: 1.5rem; }
+
+.py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+.py-1    { padding-top: 0.25rem;  padding-bottom: 0.25rem; }
+.py-1\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
+.py-2    { padding-top: 0.5rem;   padding-bottom: 0.5rem; }
+.py-2\.5 { padding-top: 0.625rem; padding-bottom: 0.625rem; }
+.py-3    { padding-top: 0.75rem;  padding-bottom: 0.75rem; }
+.py-4    { padding-top: 1rem;     padding-bottom: 1rem; }
+.py-5    { padding-top: 1.25rem;  padding-bottom: 1.25rem; }
+.py-8    { padding-top: 2rem;     padding-bottom: 2rem; }
+.py-10   { padding-top: 2.5rem;   padding-bottom: 2.5rem; }
+.py-12   { padding-top: 3rem;     padding-bottom: 3rem; }
+
+.pt-2 { padding-top: 0.5rem; }
+.pt-3 { padding-top: 0.75rem; }
+.pt-4 { padding-top: 1rem; }
+.pt-6 { padding-top: 1.5rem; }
+.pb-2 { padding-bottom: 0.5rem; }
+.pb-3 { padding-bottom: 0.75rem; }
+.pb-4 { padding-bottom: 1rem; }
+.pl-5 { padding-left: 1.25rem; }
+.pl-8 { padding-left: 2rem; }
+.pr-4 { padding-right: 1rem; }
+
+
+/* ══ 4. SPACING — margin ════════════════════════════════════════ */
+.mb-0\.5 { margin-bottom: 0.125rem; }
+.mb-1    { margin-bottom: 0.25rem; }
+.mb-2    { margin-bottom: 0.5rem; }
+.mb-3    { margin-bottom: 0.75rem; }
+.mb-4    { margin-bottom: 1rem; }
+.mb-5    { margin-bottom: 1.25rem; }
+.mb-6    { margin-bottom: 1.5rem; }
+
+.mt-0\.5 { margin-top: 0.125rem; }
+.mt-1    { margin-top: 0.25rem; }
+.mt-2    { margin-top: 0.5rem; }
+.mt-3    { margin-top: 0.75rem; }
+.mt-4    { margin-top: 1rem; }
+.mt-6    { margin-top: 1.5rem; }
+.mt-8    { margin-top: 2rem; }
+
+.ml-1 { margin-left: 0.25rem; }
+.ml-2 { margin-left: 0.5rem; }
+.ml-4 { margin-left: 1rem; }
+.mr-1 { margin-right: 0.25rem; }
+.mr-1\.5 { margin-right: 0.375rem; }
+
+.mx-4    { margin-left: 1rem; margin-right: 1rem; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.my-0\.5 { margin-top: 0.125rem; margin-bottom: 0.125rem; }
+
+
+/* ══ 5. GAP & STACK SPACING ═════════════════════════════════════ */
+.gap-0   { gap: 0; }
+.gap-1   { gap: 0.25rem; }
+.gap-1\.5{ gap: 0.375rem; }
+.gap-2   { gap: 0.5rem; }
+.gap-3   { gap: 0.75rem; }
+.gap-4   { gap: 1rem; }
+.gap-x-6 { column-gap: 1.5rem; }
+.gap-y-2 { row-gap: 0.5rem; }
+
+.space-y-1   > * + * { margin-top: 0.25rem; }
+.space-y-1\.5> * + * { margin-top: 0.375rem; }
+.space-y-2   > * + * { margin-top: 0.5rem; }
+.space-y-2\.5> * + * { margin-top: 0.625rem; }
+.space-y-3   > * + * { margin-top: 0.75rem; }
+.space-y-4   > * + * { margin-top: 1rem; }
+.space-y-5   > * + * { margin-top: 1.25rem; }
+.space-y-6   > * + * { margin-top: 1.5rem; }
+.space-y-8   > * + * { margin-top: 2rem; }
+
+.divide-y > * + * { border-top: 1px solid var(--do-border); }
+
+
+/* ══ 6. SIZING ══════════════════════════════════════════════════ */
+.w-0\.5 { width: 0.125rem; }
+.w-2    { width: 0.5rem; }
+.w-2\.5 { width: 0.625rem; }
+.w-3\.5 { width: 0.875rem; }
+.w-4    { width: 1rem; }
+.w-5    { width: 1.25rem; }
+.w-8    { width: 2rem; }
+.w-16   { width: 4rem; }
+.w-28   { width: 7rem; }
+.w-56   { width: 14rem; }
+.w-72   { width: 18rem; }
+.w-\[280px\] { width: 280px; }
+.w-fit  { width: fit-content; }
+.w-full { width: 100%; }
+
+.h-2    { height: 0.5rem; }
+.h-2\.5 { height: 0.625rem; }
+.h-3\.5 { height: 0.875rem; }
+.h-4    { height: 1rem; }
+.h-5    { height: 1.25rem; }
+.h-\[100dvh\] { height: 100dvh; }
+
+.min-w-0        { min-width: 0; }
+.min-w-max      { min-width: max-content; }
+.min-w-\[140px\]{ min-width: 140px; }
+.min-h-0        { min-height: 0; }
+.min-h-screen   { min-height: 100vh; }
+.min-h-\[120px\]{ min-height: 120px; }
+.min-h-\[200px\]{ min-height: 200px; }
+.min-h-\[520px\]{ min-height: 520px; }
+
+.max-w-xs   { max-width: 20rem; }
+.max-w-sm   { max-width: 24rem; }
+.max-w-md   { max-width: 28rem; }
+.max-w-lg   { max-width: 32rem; }
+.max-w-2xl  { max-width: 42rem; }
+.max-w-3xl  { max-width: 48rem; }
+.max-w-full { max-width: 100%; }
+.max-w-none { max-width: none; }
+.max-w-\[180px\] { max-width: 180px; }
+.max-w-\[200px\] { max-width: 200px; }
+.max-w-\[280px\] { max-width: 280px; }
+
+.max-h-48        { max-height: 12rem; }
+.max-h-52        { max-height: 13rem; }
+.max-h-\[280px\] { max-height: 280px; }
+.max-h-\[480px\] { max-height: 480px; }
+.max-h-\[90vh\]  { max-height: 90vh; }
+
+
+/* ══ 7. TYPOGRAPHY — sizes (bumped for readability) ═════════════ */
+.text-\[9px\]  { font-size: 11.5px; }
+.text-\[10px\] { font-size: 12px; }
+.text-\[11px\] { font-size: 13px; }
+.text-xs    { font-size: 14px;   line-height: 1.5; }
+.text-sm    { font-size: 15.5px; line-height: 1.55; }
+.text-base  { font-size: 17px;   line-height: 1.6; }
+.text-lg    { font-size: 22px;   line-height: 1.4; }
+.text-xl    { font-size: 26px;   line-height: 1.3; }
+.text-2xl   { font-size: 31px;   line-height: 1.22; }
+.text-3xl   { font-size: 37px;   line-height: 1.18; }
+.text-4xl   { font-size: 44px;   line-height: 1.1; }
+
+.font-normal   { font-weight: 400; }
+.font-medium   { font-weight: 500; }
+.font-semibold { font-weight: 650; }
+.font-bold     { font-weight: 750; }
+.font-black    { font-weight: 850; }
+
+.font-mono { font-family: var(--do-font-mono, 'JetBrains Mono', ui-monospace, monospace); }
+.font-sans { font-family: inherit; }
+
+.leading-none    { line-height: 1; }
+.leading-tight   { line-height: 1.22; }
+.leading-snug    { line-height: 1.4; }
+.leading-relaxed { line-height: 1.68; }
+
+.tracking-wide    { letter-spacing: .025em; }
+.tracking-wider   { letter-spacing: .05em; }
+.tracking-widest  { letter-spacing: .1em; }
+
+.text-left   { text-align: left; }
+.text-center { text-align: center; }
+.text-right  { text-align: right; }
+
+.uppercase   { text-transform: uppercase; }
+.lowercase   { text-transform: lowercase; }
+.capitalize  { text-transform: capitalize; }
+.underline   { text-decoration: underline; }
+.truncate    { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.whitespace-nowrap    { white-space: nowrap; }
+.whitespace-pre-wrap  { white-space: pre-wrap; }
+
+
+/* ══ 8. TEXT COLORS → design tokens (theme-aware) ═══════════════ */
+.text-white     { color: var(--white); }
+.text-white\/80 { color: rgba(255,255,255,.8); }
+
+.text-gray-900, .text-gray-800 { color: var(--do-text); }
+.text-gray-700                 { color: var(--do-text2); }
+.text-gray-600                 { color: var(--do-text2); }
+.text-gray-500                 { color: var(--do-text3); }
+.text-gray-400, .text-gray-300,
+.text-gray-200                 { color: var(--do-text4); }
+
+.text-slate-700 { color: var(--do-text2); }
+.text-slate-600 { color: var(--do-text3); }
+.text-slate-400,
+.text-slate-300 { color: var(--do-text4); }
+
+/* teal → brand gold */
+.text-teal-800, .text-teal-700 { color: var(--do-gold-dark); }
+.text-teal-600, .text-teal-500,
+.text-teal-400                 { color: var(--do-gold); }
+
+.text-green-700 { color: var(--do-green-dark); }
+.text-green-600 { color: var(--do-green); }
+
+.text-red-800, .text-red-700 { color: var(--do-red-dark); }
+.text-red-600, .text-red-500,
+.text-red-400                { color: var(--do-red); }
+
+.text-yellow-800, .text-amber-800,
+.text-yellow-700             { color: var(--do-orange-dark); }
+.text-yellow-600, .text-amber-600,
+.text-amber-500, .text-orange-600 { color: var(--do-orange); }
+
+.text-blue-600   { color: var(--do-blue); }
+.text-purple-800, .text-purple-700 { color: var(--info); }
+.text-purple-600, .text-purple-500,
+.text-purple-400, .text-violet-600 { color: var(--info); }
+
+/* dark: variants — tokens already flip, so keep them aligned */
+.dark\:text-white, .dark\:text-gray-100 { color: var(--do-text); }
+.dark\:text-gray-200, .dark\:text-gray-300 { color: var(--do-text2); }
+.dark\:text-gray-400       { color: var(--do-text3); }
+.dark\:text-green-400      { color: var(--do-green); }
+.dark\:text-red-400        { color: var(--do-red); }
+.dark\:text-yellow-300     { color: var(--do-orange); }
+
+
+/* ══ 9. BACKGROUNDS → design tokens ════════════════════════════ */
+.bg-white      { background-color: var(--do-surface); }
+.bg-white\/20  { background-color: rgba(255,255,255,.2); }
+.bg-gray-50    { background-color: var(--do-surf2); }
+.bg-gray-100   { background-color: var(--do-surf2); }
+.bg-gray-200   { background-color: var(--do-border); }
+.bg-gray-300   { background-color: var(--do-border-dark); }
+.bg-gray-800   { background-color: var(--do-surf2); }
+.bg-black\/50     { background-color: rgba(0,0,0,.5); }
+.bg-black\/60     { background-color: rgba(0,0,0,.6); }
+.bg-gray-900\/60  { background-color: rgba(12,10,8,.68); }
+
+/* teal → gold */
+.bg-teal-50  { background-color: var(--do-gold-bg,  rgba(196,169,106,.10)); }
+.bg-teal-100 { background-color: var(--do-icon-gold,rgba(196,169,106,.18)); }
+.bg-teal-500 { background-color: var(--do-gold); }
+.bg-teal-600 { background-color: var(--do-gold-dark); }
+
+.bg-green-100, .bg-green-50   { background-color: var(--do-green-light, rgba(22,163,74,.12)); }
+.bg-red-100,   .bg-red-50     { background-color: var(--do-red-light,   rgba(220,38,38,.12)); }
+.bg-yellow-100,.bg-yellow-50,
+.bg-amber-50                  { background-color: var(--do-orange-light,rgba(217,119,6,.12)); }
+.bg-blue-100,  .bg-blue-50    { background-color: var(--do-icon-blue,   rgba(74,144,196,.14)); }
+.bg-purple-100                { background-color: var(--info-dim); }
+.bg-purple-50                 { background-color: var(--info-dim); }
+.bg-purple-50\/50             { background-color: var(--info-dim); }
+.bg-purple-50\/30             { background-color: var(--info-dim); }
+
+.dark\:bg-gray-700, .dark\:bg-gray-800,
+.dark\:bg-gray-800\/40, .dark\:bg-gray-800\/50 { background-color: var(--do-surf2); }
+.dark\:bg-gray-900             { background-color: var(--do-bg); }
+.dark\:bg-yellow-900,
+.dark\:bg-yellow-900\/20       { background-color: var(--do-orange-light, rgba(217,119,6,.12)); }
+
+
+/* ══ 10. BORDERS ═══════════════════════════════════════════════ */
+.border    { border: 1px solid var(--do-border); }
+.border-2  { border: 2px solid var(--do-border); }
+.border-t  { border-top:    1px solid var(--do-border); }
+.border-b  { border-bottom: 1px solid var(--do-border); }
+.border-r  { border-right:  1px solid var(--do-border); }
+.border-l  { border-left:   1px solid var(--do-border); }
+.border-collapse { border-collapse: collapse; }
+.border-dashed   { border-style: dashed; }
+.border-transparent { border-color: transparent; }
+
+.border-gray-100 { border-color: var(--do-border); }
+.border-gray-200 { border-color: var(--do-border); }
+.border-gray-300 { border-color: var(--do-border-dark); }
+.border-gray-700 { border-color: var(--do-border); }
+.dark\:border-gray-600,
+.dark\:border-gray-700 { border-color: var(--do-border); }
+
+.border-teal-700, .border-teal-500,
+.border-teal-400 { border-color: var(--do-gold); }
+.border-teal-200 { border-color: var(--do-gold-border, rgba(196,169,106,.35)); }
+
+.border-green-200  { border-color: var(--do-green); }
+.border-red-200    { border-color: var(--do-red); }
+.border-yellow-200,
+.border-amber-200,
+.dark\:border-yellow-700 { border-color: var(--do-orange); }
+.border-blue-200   { border-color: var(--do-blue); }
+.border-purple-200 { border-color: var(--info-dim); }
+.border-purple-100 { border-color: var(--info-dim); }
+
+.rounded     { border-radius: var(--do-r-xs, 4px); }
+.rounded-sm  { border-radius: var(--do-r-xs, 4px); }
+.rounded-md  { border-radius: var(--do-r-sm, 8px); }
+.rounded-lg  { border-radius: var(--do-r,    12px); }
+.rounded-xl  { border-radius: var(--do-r-lg, 16px); }
+.rounded-2xl { border-radius: var(--do-r-xl, 22px); }
+.rounded-full{ border-radius: var(--do-r-full, 9999px); }
+
+
+/* ══ 11. SHADOWS / EFFECTS ═════════════════════════════════════ */
+.shadow-sm  { box-shadow: var(--do-shadow-sm, 0 1px 2px rgba(0,0,0,.06)); }
+.shadow-lg  { box-shadow: var(--do-shadow, 0 8px 28px rgba(0,0,0,.14)); }
+.shadow-2xl { box-shadow: 0 24px 64px rgba(0,0,0,.35); }
+.backdrop-blur-sm { backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+.opacity-80 { opacity: .8; }
+.transition-colors {
+  transition: background-color .15s ease, border-color .15s ease,
+              color .15s ease, box-shadow .15s ease;
+}
+
+
+/* ══ 12. OVERFLOW / MISC ═══════════════════════════════════════ */
+.overflow-hidden  { overflow: hidden; }
+.overflow-x-auto  { overflow-x: auto; }
+.overflow-y-auto  { overflow-y: auto; }
+.cursor-pointer   { cursor: pointer; }
+.resize-none      { resize: none; }
+
+
+/* ══ 13. HOVER STATES ══════════════════════════════════════════ */
+.hover\:bg-gray-50:hover,
+.hover\:bg-gray-50\/60:hover,
+.hover\:bg-gray-100:hover   { background-color: var(--do-surf2); }
+.hover\:bg-gray-200:hover   { background-color: var(--do-border); }
+.dark\:hover\:bg-gray-800:hover,
+.dark\:hover\:bg-gray-800\/40:hover { background-color: var(--do-surf2); }
+
+.hover\:bg-teal-50:hover,
+.hover\:bg-teal-500\/10:hover { background-color: var(--do-gold-bg, rgba(196,169,106,.10)); }
+.hover\:bg-teal-100:hover     { background-color: var(--do-icon-gold, rgba(196,169,106,.18)); }
+.hover\:bg-teal-600:hover     { background-color: var(--do-gold-dark); }
+.hover\:bg-teal-700:hover     { background-color: var(--do-gold-dark); filter: brightness(.92); }
+
+.hover\:bg-red-50:hover      { background-color: var(--do-red-light, rgba(220,38,38,.12)); }
+.hover\:bg-purple-50:hover   { background-color: var(--info-dim); }
+.hover\:bg-purple-100:hover  { background-color: var(--info-dim); }
+
+.hover\:text-gray-600:hover  { color: var(--do-text2); }
+.hover\:text-red-600:hover   { color: var(--do-red); }
+.hover\:text-teal-600:hover,
+.hover\:text-teal-800:hover  { color: var(--do-gold-dark); }
+.hover\:underline:hover      { text-decoration: underline; }
+
+.hover\:border-teal-200:hover,
+.hover\:border-teal-400:hover   { border-color: var(--do-gold); }
+.hover\:border-purple-300:hover { border-color: var(--info-dim); }
+
+
+/* ══ 14. FOCUS STATES ══════════════════════════════════════════ */
+.focus\:outline-none:focus { outline: none; }
+.focus\:ring-2:focus       { box-shadow: 0 0 0 3px var(--do-gold-bg, rgba(196,169,106,.22)); }
+.focus\:ring-teal-300:focus   { box-shadow: 0 0 0 3px rgba(196,169,106,.22); border-color: var(--do-gold); }
+.focus\:ring-green-300:focus  { box-shadow: 0 0 0 3px var(--success-dim);   border-color: var(--do-green); }
+.focus\:ring-red-300:focus    { box-shadow: 0 0 0 3px var(--danger-dim);   border-color: var(--do-red); }
+.focus\:ring-purple-300:focus { box-shadow: 0 0 0 3px var(--info-dim); border-color: var(--info); }
+
+.placeholder-gray-400::placeholder { color: var(--do-text4); }
+
+
+/* ══ 15. ANIMATION ═════════════════════════════════════════════ */
+@keyframes do-zoom-in-95 {
+  from { opacity: 0; transform: scale(.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.zoom-in-95 { animation: do-zoom-in-95 .18s ease-out; }
+
+
+/* ══ 16. PROSE (legal pages) ═══════════════════════════════════ */
+.prose { color: var(--do-text2); line-height: 1.72; max-width: 70ch; }
+.prose h1, .prose h2, .prose h3 {
+  color: var(--do-text);
+  font-family: var(--do-font-serif, Spectral, Georgia, serif);
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 1.8em 0 .6em;
+  text-wrap: balance;
+}
+.prose h1 { font-size: 28px; }
+.prose h2 { font-size: 21px; }
+.prose h3 { font-size: 17px; }
+.prose p        { margin: 0 0 1.05em; }
+.prose ul,
+.prose ol       { margin: 0 0 1.05em; padding-left: 1.4em; }
+.prose li       { margin: .35em 0; }
+.prose strong   { color: var(--do-text); font-weight: 650; }
+.prose a        { color: var(--do-gold-dark); text-decoration: underline; }
+.prose code     {
+  font-family: var(--do-font-mono, monospace);
+  font-size: .9em;
+  background: var(--do-surf2);
+  padding: .12em .4em;
+  border-radius: var(--do-r-xs, 4px);
+}
+.prose hr { border: 0; border-top: 1px solid var(--do-border); margin: 2em 0; }
+.prose-sm { font-size: 13.5px; }
+.prose-sm h1 { font-size: 24px; }
+.prose-sm h2 { font-size: 19px; }
+.prose-sm h3 { font-size: 16px; }
+
+
+/* ══ 17. NATIVE CONTROL THEMING ════════════════════════════════
+   Tailwind-styled inputs/selects/tables had no real styles, so
+   browsers fell back to defaults (serif labels, white boxes).
+   These rules give them the design system look.
+   ──────────────────────────────────────────────────────────── */
+.border input, .border select, .border textarea { font-family: inherit; }
+
+input.w-full, select.w-full, textarea.w-full,
+input.border, select.border, textarea.border {
+  background: var(--do-surface);
+  color: var(--do-text);
+  border: 1.5px solid var(--do-border-dark);
+  border-radius: var(--do-r-sm, 8px);
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+input.w-full:focus, select.w-full:focus, textarea.w-full:focus,
+input.border:focus, select.border:focus, textarea.border:focus {
+  border-color: var(--do-gold);
+  box-shadow: 0 0 0 3px rgba(196,169,106,.18);
+}
+
+/* form labels rendered via Tailwind classes */
+label.block,
+label.text-xs,
+label.text-sm {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .45px;
+  text-transform: uppercase;
+  color: var(--do-text3);
+  font-family: var(--do-font-mono, ui-monospace, monospace);
+}
+
+/* tables written with Tailwind classes */
+table.w-full th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--do-text4);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--do-border);
+  background: var(--do-surf2);
+  white-space: nowrap;
+}
+table.w-full td {
+  padding: 11px 14px;
+  font-size: 13px;
+  color: var(--do-text2);
+  border-bottom: 1px solid var(--do-border);
+  vertical-align: middle;
+}
+table.w-full tr:last-child td { border-bottom: none; }
+
+/* native date input in dark mode */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: var(--do-date-icon-filter, none);
+  cursor: pointer;
+  opacity: .75;
+}
+:root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+:root[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.4);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) input[type="date"]::-webkit-calendar-picker-indicator,
+  :root:not([data-theme="light"]) input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(1.4);
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   18. ADDENDUM — utilities held in VARIABLES, not className="…"
+   ───────────────────────────────────────────────────────────────
+   e.g. CampaignDetail's BADGE_STYLES = { active: 'bg-emerald-100
+   text-emerald-700', … } and BillingTab's STATUS_BADGE. These are
+   applied dynamically, so the first pass did not see them.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── status-badge colours (CampaignDetail BADGE_STYLES) ── */
+.bg-emerald-100 { background-color: var(--do-green-light,  rgba(22,163,74,.12)); }
+.bg-emerald-400,
+.bg-emerald-600,
+.bg-green-600   { background-color: var(--do-green); }
+.bg-rose-100    { background-color: var(--do-red-light,    rgba(220,38,38,.12)); }
+.bg-sky-100     { background-color: var(--do-icon-blue,    rgba(74,144,196,.14)); }
+.bg-slate-100   { background-color: var(--do-surf2); }
+.bg-violet-100  { background-color: var(--info-dim); }
+.bg-violet-500  { background-color: var(--info); }
+.bg-purple-300  { background-color: var(--info-dim); }
+.bg-amber-100,
+.bg-orange-100  { background-color: var(--do-orange-light, rgba(217,119,6,.12)); }
+.bg-amber-500,
+.bg-orange-500  { background-color: var(--do-orange); }
+.bg-gray-700    { background-color: var(--do-surf2); }
+.bg-teal-400    { background-color: var(--do-gold); }
+.bg-teal-50\/40 { background-color: var(--do-gold-bg, rgba(196,169,106,.07)); }
+.bg-teal-500\/5 { background-color: rgba(196,169,106,.06); }
+
+/* translucent dark-mode chips */
+.bg-green-900\/40  { background-color: var(--do-green-light,  rgba(22,163,74,.14)); }
+.bg-red-900\/40    { background-color: var(--do-red-light,    rgba(220,38,38,.14)); }
+.bg-yellow-900\/40 { background-color: var(--do-orange-light, rgba(217,119,6,.14)); }
+.bg-teal-900\/40   { background-color: var(--do-gold-bg,      rgba(196,169,106,.14)); }
+.bg-purple-900\/50 { background-color: var(--info-dim); }
+
+.text-emerald-700 { color: var(--do-green-dark); }
+.text-green-400   { color: var(--do-green); }
+.text-rose-700    { color: var(--do-red-dark); }
+.text-sky-700     { color: var(--do-blue); }
+.text-blue-700    { color: var(--do-blue); }
+.text-violet-700  { color: var(--info); }
+.text-purple-300  { color: var(--info); }
+.text-amber-700,
+.text-orange-700  { color: var(--do-orange-dark); }
+.text-yellow-400  { color: var(--do-orange); }
+.text-black       { color: var(--text); }
+
+/* ── "primary" alias → brand gold ── */
+.text-primary        { color: var(--do-gold-dark); }
+.border-primary      { border-color: var(--do-gold); }
+.border-primary\/55  { border-color: rgba(196,169,106,.55); }
+.bg-primary\/15      { background-color: rgba(196,169,106,.15); }
+.hover\:bg-primary\/10:hover   { background-color: rgba(196,169,106,.10); }
+.hover\:border-primary:hover   { border-color: var(--do-gold); }
+.dark\:border-primary\/50      { border-color: rgba(196,169,106,.5); }
+
+/* ── extra borders ── */
+.border-b-2        { border-bottom-width: 2px; border-bottom-style: solid; }
+.border-gray-400   { border-color: var(--do-text4); }
+.border-gray-600   { border-color: var(--do-border-dark); }
+.border-green-600,
+.border-green-700  { border-color: var(--do-green); }
+.border-red-400,
+.border-red-700    { border-color: var(--do-red); }
+.border-yellow-700 { border-color: var(--do-orange); }
+.border-purple-400,
+.border-purple-700 { border-color: var(--info-dim); }
+.border-teal-300,
+.border-teal-500   { border-color: var(--do-gold); }
+.dark\:border-teal-500      { border-color: var(--do-gold); }
+.dark\:border-gray-700\/50  { border-color: var(--do-border); }
+
+/* ── extra hover states ── */
+.hover\:bg-gray-300:hover     { background-color: var(--do-border-dark); }
+.hover\:bg-gray-800:hover     { background-color: var(--do-surf2); }
+.hover\:bg-emerald-200:hover  { background-color: var(--do-green-light,  rgba(22,163,74,.2)); }
+.hover\:bg-green-700:hover    { background-color: var(--do-green-dark); }
+.hover\:bg-yellow-200:hover   { background-color: var(--do-orange-light, rgba(217,119,6,.2)); }
+.hover\:bg-teal-50\/30:hover  { background-color: var(--do-gold-bg,      rgba(196,169,106,.07)); }
+.hover\:text-gray-700:hover   { color: var(--do-text2); }
+.hover\:border-gray-300:hover    { border-color: var(--do-border-dark); }
+.hover\:border-teal-300:hover    { border-color: var(--do-gold); }
+.hover\:border-amber-300:hover   { border-color: var(--do-orange); }
+.hover\:border-orange-300:hover  { border-color: var(--do-orange); }
+.hover\:border-emerald-400:hover { border-color: var(--do-green); }
+.hover\:border-violet-300:hover  { border-color: var(--info-dim); }
+.group:hover .group-hover\:text-teal-300 { color: var(--do-gold); }
+
+/* ── gradients (bg-gradient-to-br from-X to-Y) ── */
+.bg-gradient-to-br { background-image: linear-gradient(to bottom right, var(--do-g-from, transparent), var(--do-g-to, transparent)); }
+.bg-gradient-to-r  { background-image: linear-gradient(to right,        var(--do-g-from, transparent), var(--do-g-to, transparent)); }
+.bg-gradient-to-b  { background-image: linear-gradient(to bottom,       var(--do-g-from, transparent), var(--do-g-to, transparent)); }
+
+.from-teal-500   { --do-g-from: var(--gold); }   /* teal → brand gold */
+.to-emerald-500  { --do-g-to:   var(--gold-dark); }
+.to-teal-500     { --do-g-to:   var(--gold); }
+.from-blue-500   { --do-g-from: var(--info); }
+.to-cyan-500     { --do-g-to:   var(--info); }
+.from-sky-500    { --do-g-from: var(--info); }
+.to-blue-500     { --do-g-to:   var(--info); }
+.from-violet-500 { --do-g-from: var(--info); }
+.to-purple-500   { --do-g-to:   var(--info); }
+.to-violet-500   { --do-g-to:   var(--info); }
+.from-indigo-500 { --do-g-from: var(--info); }
+.from-amber-500  { --do-g-from: var(--warning); }
+.to-amber-500    { --do-g-to:   var(--warning); }
+.from-orange-500 { --do-g-from: var(--accent); }
+.to-orange-500   { --do-g-to:   var(--accent); }
+.from-pink-500   { --do-g-from: var(--danger); }
+.to-rose-500     { --do-g-to:   var(--danger); }
+.from-green-500  { --do-g-from: var(--success); }
+.from-slate-500  { --do-g-from: var(--text-muted); }
+.to-gray-600     { --do-g-to:   var(--text-muted); }
+
+/* ── rings ── */
+.ring-1 { box-shadow: 0 0 0 1px var(--do-ring, var(--do-gold)); }
+.focus\:ring-1:focus { box-shadow: 0 0 0 1px var(--do-ring, var(--do-gold)); }
+.ring-teal-400   { --do-ring: var(--do-gold); }
+.ring-purple-500 { --do-ring: var(--info); }
+
+/* ── sizing & misc ── */
+.h-8  { height: 2rem; }
+.h-9  { height: 2.25rem; }
+.w-9  { width: 2.25rem; }
+.min-h-10          { min-height: 2.5rem; }
+.min-h-\[2rem\]    { min-height: 2rem; }
+.min-h-\[2\.75rem\]{ min-height: 2.75rem; }
+.mt-auto      { margin-top: auto; }
+.opacity-50   { opacity: .5; }
+.shadow-md    { box-shadow: var(--do-shadow, 0 4px 14px rgba(0,0,0,.12)); }
+.cursor-not-allowed { cursor: not-allowed; }
+.disabled\:opacity-50:disabled { opacity: .5; }
+
+/* ── transitions & animation ── */
+.transition-all       { transition: all .18s ease; }
+.transition-opacity   { transition: opacity .18s ease; }
+.transition-transform { transition: transform .18s ease; }
+.transition-\[grid-template-rows\] { transition: grid-template-rows .26s ease; }
+.duration-200 { transition-duration: .2s; }
+.duration-300 { transition-duration: .3s; }
+
+@keyframes do-pulse { 50% { opacity: .45 } }
+.animate-pulse { animation: do-pulse 1.9s cubic-bezier(.4,0,.6,1) infinite; }
+@keyframes do-animate-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+.animate-in { animation: do-animate-in .2s ease-out; }
+
+/* ── responsive grids ── */
+@media (min-width: 640px) {
+  .sm\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sm\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .lg\:grid-cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (max-width: 639px) {
+  .sm\:grid-cols-2, .sm\:grid-cols-3, .lg\:grid-cols-6 { grid-template-columns: 1fr; }
+}
+
+/* ── status badge base (BADGE_STYLES pairs colour utilities only) ── */
+.do-badge,
+span[class*="bg-emerald-100"],
+span[class*="bg-violet-100"],
+span[class*="bg-rose-100"],
+span[class*="bg-sky-100"],
+span[class*="bg-slate-100"] {
+  font-weight: 650;
+  letter-spacing: .2px;
+}
+
+/* ── 19. final gaps ── */
+.opacity-0   { opacity: 0; }
+.opacity-60  { opacity: .6; }
+.opacity-70  { opacity: .7; }
+.opacity-100 { opacity: 1; }
+.w-6 { width: 1.5rem; }
+.ring-2 { box-shadow: 0 0 0 2px var(--do-ring, var(--do-gold)); }
+.grid-rows-\[1fr\] { grid-template-rows: 1fr; }
+
+/* ═══════════════════════════════════════════════════════════════
+   20. CONTRAST FIX — WCAG AA
+   ───────────────────────────────────────────────────────────────
+   --do-text4 is used for every uppercase mono label in the app
+   (stat tiles, table headers, field labels). It was failing AA in
+   BOTH themes, which is why small labels read as washed out:
+
+     (old palette failed AA in both themes)
+
+   Re-tuned, same warm hue, now passing:
+
+     (InboxAir --text-muted passes AA in both themes)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* --do-text4 is now aliased to --text-muted in styles/inboxair-theme.css (AA-safe in both themes). */
+
+
+/* ═══════════════════════════════════════════════════════════════
+   21. THE REAL TYPOGRAPHY FIX
+   ───────────────────────────────────────────────────────────────
+   index.css loads ONLY Spectral (serif) + JetBrains Mono, and the
+   `html, body` rule never sets font-family. So every piece of body
+   text in the app was falling back to the BROWSER DEFAULT —
+   Times New Roman.
+
+   That is why the text looked soft and dated no matter how much
+   the size or contrast was raised. The fix is a real UI sans.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --do-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                  Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+html, body {
+  font-family: var(--do-font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv02','cv03','cv04','cv11';
+  letter-spacing: -0.006em;
+}
+
+/* every control inherits it too */
+button, input, select, textarea, optgroup {
+  font-family: inherit;
+}
+
+/* section + card headings: crisp sans, not Georgia/Times */
+.st-section-title,
+.do-card-title,
+.do-ui-cardtitle,
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--do-font-sans);
+  font-weight: 700;
+  letter-spacing: -0.018em;
+}
+
+/* the gold hero keeps Spectral — that is the brand voice */
+.do-hero-title,
+.cd-hero-title {
+  font-family: var(--do-font-serif);
+  letter-spacing: -0.02em;
+}
+
+/* numbers stay mono and tabular so columns line up */
+.cd-kpi-value,
+.do-statcard-val,
+.do-legend-count,
+.bl-tier-price,
+.bl-pack-num,
+.bl-balance-val {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   22. SCROLLING — exactly one scroller, in the right place
+   ───────────────────────────────────────────────────────────────
+   The rule for the whole app:
+
+     Layout  = the viewport frame. Every level is overflow:hidden.
+     Page    = owns its own scroller.
+
+   Layout.jsx used to ALSO scroll, which gave two scrollbars. That
+   is fixed in Layout.jsx itself. So pages must keep their scroller
+   — an earlier version of this file forced .st-content to
+   `visible`, which combined with the Layout fix left NOTHING able
+   to scroll and clipped long sections. Settings scrolls in
+   .st-content, so the hero and the section list stay put while the
+   panel moves.
+   ═══════════════════════════════════════════════════════════════ */
+
+.st-layout  { overflow: hidden; min-height: 0; }
+.st-content { overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.st-sidebar { overflow-y: auto; min-height: 0; }
+
+/* a visible, themed scrollbar instead of the OS default */
+.st-content::-webkit-scrollbar,
+.do-chart-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
+.st-content::-webkit-scrollbar-track { background: transparent; }
+.st-content::-webkit-scrollbar-thumb {
+  background: var(--do-border-dark);
+  border-radius: var(--do-r-full);
+  border: 2px solid var(--do-surface);
+}
+.st-content::-webkit-scrollbar-thumb:hover { background: var(--do-text4); }
+.st-content { scrollbar-width: thin; scrollbar-color: var(--do-border-dark) transparent; }
+
+/* breathing room between stacked cards */
+.st-section > .do-card + .do-card { margin-top: 18px; }
+.st-section { margin-bottom: 0; }
+
+/* ═══════════════════════════════════════════════════════════════
+   23. SHARED ANALYTICS CHART CARD  —  theme-aware
+   ───────────────────────────────────────────────────────────────
+   Used by BOTH the Analytics page and the Campaign → Analytics tab
+   so the two are identical. Was hardcoded dark
+   in both themes; now every surface is a token, so the card is
+   white with dark text in light mode and dark with light text in
+   dark mode.
+   ═══════════════════════════════════════════════════════════════ */
+
+.do-chartcard {
+  border-radius: var(--do-r-lg);
+  overflow: hidden;
+  border: 1px solid var(--do-border);
+  background: var(--do-surface);
+  box-shadow: var(--do-shadow-sm);
+  margin-bottom: 16px;
+}
+
+/* ── header ── */
+.do-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--do-border);
+  background: var(--do-surf2);
+  border-radius: 0;
+}
+.do-chart-title {
+  font-family: var(--do-font-serif);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--do-text);
+  letter-spacing: -.2px;
+}
+.do-chart-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.do-preset-grp {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--do-surface);
+  border: 1px solid var(--do-border);
+  border-radius: var(--do-r-sm);
+}
+.do-preset-tab {
+  padding: 5px 11px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--do-text3);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.do-preset-tab:hover { background: var(--do-surf2); color: var(--do-text); }
+.do-preset-tab.active { background: var(--do-gold); color: var(--on-gold); font-weight: 750; }
+
+.do-compare-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 13px;
+  border-radius: var(--do-r-full);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.do-compare-btn.off { background: transparent; border: 1px solid var(--do-border-dark); color: var(--do-text3); }
+.do-compare-btn.on  { background: var(--do-gold-bg); border: 1px solid var(--do-gold); color: var(--do-gold-dark); }
+.do-compare-btn:hover { border-color: var(--do-gold); color: var(--do-gold-dark); }
+
+/* ── custom range row ── */
+.do-chart-range {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--do-border);
+  background: var(--do-surf2);
+  font-size: 12.5px;
+  color: var(--do-text3);
+}
+.do-chart-range label { display: flex; align-items: center; gap: 7px; }
+
+/* ── plot area ── */
+.do-chart-wrap {
+  position: relative;
+  background: var(--do-surface);
+  border-radius: 0;
+  padding: 18px 6px 6px;
+}
+.do-chart-empty {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 8px; pointer-events: none;
+}
+.do-chart-empty-title { font-size: 13.5px; font-weight: 650; color: var(--do-text4); }
+.do-chart-empty-sub   { font-size: 12px; color: var(--do-text4); opacity: .75; }
+
+/* ── footer stat tiles ── */
+.do-legend {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1px;
+  background: var(--do-border);
+  border-top: 1px solid var(--do-border);
+  border-radius: 0 0 var(--do-r-lg) var(--do-r-lg);
+  overflow: hidden;
+}
+@media (max-width: 900px) { .do-legend { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 520px) { .do-legend { grid-template-columns: repeat(2, 1fr); } }
+
+.do-legend-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 14px 15px 13px;
+  border: none;
+  background: var(--do-surface);
+  cursor: pointer;
+  text-align: left;
+  transition: background .15s, opacity .15s;
+}
+.do-legend-btn::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--sw);
+  transition: opacity .15s;
+}
+.do-legend-btn:hover { background: var(--do-surf2); }
+.do-legend-btn.hidden { opacity: .4; }
+.do-legend-btn.hidden::before { opacity: .3; }
+
+.do-legend-count {
+  font-family: var(--do-font-mono);
+  font-size: 25px;
+  font-weight: 800;
+  color: var(--do-text);
+  line-height: 1;
+  letter-spacing: -1.1px;
+  font-variant-numeric: tabular-nums;
+}
+.do-legend-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: var(--do-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  color: var(--do-text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.do-legend-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; display: inline-block; }
+@media (max-width: 520px) { .do-legend-count { font-size: 21px; } }
+
+/* ── tooltip ── */
+.do-chart-tip {
+  background: var(--do-surface);
+  border: 1px solid var(--do-gold);
+  border-radius: var(--do-r);
+  box-shadow: var(--do-shadow);
+  padding: 12px 15px;
+  min-width: 196px;
+}
+.do-chart-tip-date {
+  font-weight: 800;
+  color: var(--do-gold-dark);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--do-border);
+  font-size: 12px;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+.do-chart-tip-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.do-chart-tip-name { display: flex; align-items: center; gap: 8px; color: var(--do-text2); font-size: 12.5px; font-weight: 500; }
+.do-chart-tip-val  { font-family: var(--do-font-mono); font-weight: 800; color: var(--do-text); font-size: 14px; font-variant-numeric: tabular-nums; letter-spacing: -.3px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   24. CARD SHAPE + SPACING
+   ───────────────────────────────────────────────────────────────
+   Every main card is rounded, and nothing butts up against the
+   "Free plan / Upgrade now" banner or against its neighbour.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* every hero is rounded — beats any leftover inline borderRadius:0 */
+.do-hero,
+.cd-hero,
+.st-hero,
+.st-header {
+  border-radius: var(--do-r-lg) !important;
+}
+
+/* the billing banner is its own card, detached from the hero below */
+[class*="billing-wall"],
+[class*="BillingWall"],
+.do-billing-banner {
+  border-radius: var(--do-r-lg);
+  margin-bottom: 16px;
+}
+
+/* Settings hero sits inside its own padded shell like every other page */
+.st-hero, .st-header { margin-bottom: 16px; }
+
+/* ── breathing room between stacked blocks ── */
+.do-hero + *            { margin-top: 0; }
+.do-card + .do-card     { margin-top: 18px; }
+.do-chartcard + *       { margin-top: 20px; }
+* + .do-chartcard       { margin-top: 20px; }
+.do-statcard-row        { margin-bottom: 22px; }
+.cd-kpi-row             { margin-bottom: 20px; }
+
+/* a page that renders straight into the layout gets its own gutter */
+.do-page { padding: 20px 24px; }
+@media (max-width: 640px) { .do-page { padding: 14px 16px; } }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   25. HEADINGS — bigger, by NAME not by size
+   ───────────────────────────────────────────────────────────────
+   Targeted by class so the stat/KPI numbers (which were just made
+   medium on purpose) are never caught by this.
+   ═══════════════════════════════════════════════════════════════ */
+
+.do-hero-title, .cd-hero-title { font-size: 33px !important; line-height: 1.12; letter-spacing: -.5px; }
+.do-hero-sub                   { font-size: 15px !important; }
+.do-hero-eyebrow               { font-size: 12px !important; }
+
+.do-chart-title                { font-size: 21px !important; }
+.do-card-title,
+.do-ui-cardtitle               { font-size: 21px !important; line-height: 1.25; }
+.do-ui-cardsub                 { font-size: 14.5px !important; }
+
+.st-section-title              { font-size: 23px !important; line-height: 1.25; }
+.st-field-label                { font-size: 12px !important; }
+.st-sidebar-item               { font-size: 15px !important; }
+.st-tab-btn                    { font-size: 15.5px !important; }
+
+.bl-sec-title                  { font-size: 24px !important; }
+.bl-plan-name                  { font-size: 34px !important; }
+.tm-title, .inv-title          { font-size: 21px !important; }
+.cd-tab                        { font-size: 15.5px !important; }
+.ob-hero-title                 { font-size: 26px !important; }
+
+h1 { font-size: 34px; } h2 { font-size: 27px; } h3 { font-size: 22px; }
+h4 { font-size: 19px; } h5 { font-size: 17px; } h6 { font-size: 15.5px; }
+
+.prose h1 { font-size: 34px; } .prose h2 { font-size: 26px; } .prose h3 { font-size: 21px; }
+.prose    { font-size: 16px; }
+
+/* mono uppercase labels stay compact but legible */
+.do-statcard-label, .cd-kpi-label, .do-legend-name,
+.do-ui-label, .inv-label, .tm-table th, .do-tbl th { font-size: 12px !important; }
+
+/* resolved date range under the chart title */
+.do-chart-range-label {
+  font-family: var(--do-font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  color: var(--do-text3);
+  margin-top: 5px;
+  white-space: nowrap;
+}

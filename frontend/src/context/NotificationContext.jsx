@@ -9,8 +9,16 @@ export function NotificationProvider({ children }) {
     setNotes(n => [...n, { id, ...note }]);
     setTimeout(() => setNotes(n => n.filter(x => x.id !== id)), note.duration || 4000);
   }, []);
+  // Callable AND has .success/.error, because the app uses both styles:
+  //   notify({ type: 'error', message: '...' })   and   notify.success('...')
+  const notify = (arg, message) => {
+    if (arg && typeof arg === 'object') return add({ type: 'success', ...arg });
+    return add({ type: message === undefined ? 'success' : arg, message: message === undefined ? arg : message });
+  };
+  notify.success = (message) => add({ type: 'success', message });
+  notify.error = (message) => add({ type: 'error', message });
   return (
-    <NotificationContext.Provider value={add}>
+    <NotificationContext.Provider value={notify}>
       {children}
       <div className="fixed top-4 right-4 space-y-2 z-50">
         {notes.map(n => (
@@ -24,7 +32,10 @@ export function NotificationProvider({ children }) {
 }
 
 export function useNotify() {
-  const add = useContext(NotificationContext);
-  if (!add) throw new Error('useNotify must be used within NotificationProvider');
-  return add;
+  const ctx = useContext(NotificationContext);
+  if (ctx) return ctx;
+  const noop = () => {};
+  noop.success = noop;
+  noop.error = noop;
+  return noop;
 }

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>InboxAir</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <span class="logo">InboxAir</span>
+    <div class="header-actions" id="header-actions" hidden>
+      <a id="dashboard-btn" class="link-btn" href="#" target="_blank">Dashboard ↗</a>
+      <button id="logout-btn" class="link-btn">Log out</button>
+    </div>
+  </div>
+
+  <!-- Login view -->
+  <div id="login-view" class="view">
+    <div class="login-card">
+      <div class="login-title">Welcome back</div>
+      <p class="hint">Log in with your InboxAir account</p>
+      <div class="field">
+        <label for="login-username">Username</label>
+        <input id="login-username" type="text" placeholder="Username" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="login-password">Password</label>
+        <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" />
+      </div>
+      <button id="login-btn" class="primary-btn">Log In</button>
+      <p id="login-error" class="error-text" hidden></p>
+    </div>
+  </div>
+
+  <!-- Main view -->
+  <div id="main-view" class="view" hidden>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="add">Add Lead</button>
+      <button class="tab-btn notif-tab" data-tab="notifications">
+        Notifications
+        <span id="notif-badge" class="notif-badge" hidden>0</span>
+      </button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </div>
+
+    <!-- ── Tab: Add Lead ── -->
+    <div id="tab-add" class="tab-panel">
+      <!-- Campaign stats (formerly the Stats tab) -->
+      <div class="stats-block">
+        <div class="section-head">
+          <span class="section-title">Campaign stats</span>
+          <select id="stats-campaign" class="small-select"></select>
+        </div>
+        <div id="stats-content">
+          <p class="hint">Select a campaign to view stats</p>
+        </div>
+      </div>
+
+      <div class="section-head"><span class="section-title">Add this page as a lead</span></div>
+      <div class="field">
+        <label for="field-email">Email</label>
+        <input id="field-email" type="email" placeholder="lead@example.com" />
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="field-name">Name</label>
+          <input id="field-name" type="text" placeholder="Optional" />
+        </div>
+        <div class="field">
+          <label for="field-business">Business name</label>
+          <input id="field-business" type="text" placeholder="Optional" />
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="field-website">Website</label>
+          <input id="field-website" type="text" placeholder="Optional" />
+        </div>
+        <div class="field">
+          <label for="field-industry">Industry</label>
+          <input id="field-industry" type="text" placeholder="Optional" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="field-custom-json">Additional custom data (JSON)</label>
+        <textarea id="field-custom-json" rows="2" placeholder='{"title": "CEO"}'></textarea>
+      </div>
+      <div class="field">
+        <label for="field-campaign">Campaign</label>
+        <select id="field-campaign"></select>
+      </div>
+      <button id="add-btn" class="primary-btn">Add Lead</button>
+      <div id="toast" class="toast" hidden></div>
+    </div>
+
+    <!-- ── Tab: Notifications ── -->
+    <div id="tab-notifications" class="tab-panel" hidden>
+      <div class="notif-header">
+        <span class="hint" style="margin:0">Recent notifications</span>
+        <button id="mark-all-read-btn" class="link-btn">Mark all read</button>
+      </div>
+      <div id="notif-list"><p class="hint">Loading…</p></div>
+    </div>
+
+    <!-- ── Tab: Settings ── -->
+    <div id="tab-settings" class="tab-panel" hidden>
+      <div class="section-head"><span class="section-title">Extension preferences</span></div>
+
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Reply notifications</div>
+          <div class="setting-desc">Get a browser notification when a lead replies</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="setting-reply-notif" />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Open notifications</div>
+          <div class="setting-desc">Get notified when a lead opens your email</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="setting-open-notif" />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+
+            <div class="setting-row">
+        <div>
+          <div class="setting-label">Sent notifications</div>
+          <div class="setting-desc">Notify when an email is successfully sent</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="setting-sent-notif" />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Click notifications</div>
+          <div class="setting-desc">Notify when a lead clicks a link</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="setting-click-notif" />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Bounce notifications</div>
+          <div class="setting-desc">Notify when an email bounces</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="setting-bounce-notif" />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+
+      <div class="section-divider">Show in notifications tab</div>
+
+      <div class="setting-row">
+        <div class="setting-label">Email Sent</div>
+        <label class="toggle"><input type="checkbox" id="show-sent" /><span class="toggle-track"></span></label>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Email Opened</div>
+        <label class="toggle"><input type="checkbox" id="show-opened" /><span class="toggle-track"></span></label>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Link Clicked</div>
+        <label class="toggle"><input type="checkbox" id="show-clicked" /><span class="toggle-track"></span></label>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Lead Replied</div>
+        <label class="toggle"><input type="checkbox" id="show-replied" /><span class="toggle-track"></span></label>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Lead Unsubscribed</div>
+        <label class="toggle"><input type="checkbox" id="show-unsubscribed" /><span class="toggle-track"></span></label>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">System Events</div>
+        <label class="toggle"><input type="checkbox" id="show-system" /><span class="toggle-track"></span></label>
+      </div>
+      
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Check interval</div>
+          <div class="setting-desc">How often to poll for new notifications</div>
+        </div>
+        <select id="setting-interval" class="small-select">
+          <option value="1">1 min</option>
+          <option value="5" selected>5 min</option>
+          <option value="15">15 min</option>
+          <option value="30">30 min</option>
+        </select>
+      </div>
+
+      <button id="save-settings-btn" class="primary-btn" style="margin-top:12px">Save Settings</button>
+      <div id="settings-toast" class="toast" hidden></div>
+    </div>
+
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

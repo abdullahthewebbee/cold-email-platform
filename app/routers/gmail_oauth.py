@@ -408,6 +408,15 @@ async def google_callback(
 
     await db.flush()
     log.info("Gmail OAuth connected: %s (inbox_id=%s)", email, inbox.id)
+    try:
+        from app.audit import audit
+        from app.models import User as _User
+        _u = (await db.execute(select(_User).where(_User.org_id == org_id))).scalars().first()
+        await audit(db, None, _u, "inbox.connected",
+                    target_type="inbox", target_id=str(inbox.id),
+                    detail={"email": email, "provider": "gmail"})
+    except Exception:
+        pass
     from app.unibox import queue_sync_for_inbox
     background_tasks.add_task(queue_sync_for_inbox, inbox.id, "oauth-connect")
 

@@ -208,11 +208,27 @@ async def process_unsubscribe(db: AsyncSession, token: str) -> tuple[str, int]:
                 row.campaign_id,
                 token,
             )
+            if lead is not None:
+                from app.suppression import add_to_suppression_list
+                await add_to_suppression_list(
+                    db, getattr(lead, "org_id", None), lead.email,
+                    reason="unsubscribed", source_campaign_id=row.campaign_id,
+                )
+                from app.models import ComplaintEvent
+                db.add(ComplaintEvent(
+                    lead_id=row.lead_id,
+                    campaign_id=row.campaign_id,
+                    source="unsubscribe_proxy",
+                ))
         await db.execute(delete(QueueSlot).where(QueueSlot.campaign_lead_id == cl.id))
 
     await db.commit()
 
     if not already_done and lead and cl:
+        from app.complaint_guardrail import check_complaint_guardrail
+        guardrail_result = await check_complaint_guardrail(db, row.campaign_id)
+        if guardrail_result:
+            await db.commit()
         await fire_webhook_event(
             db,
             "lead.unsubscribed",

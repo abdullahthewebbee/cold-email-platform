@@ -37,6 +37,11 @@ log = logging.getLogger("quickly.auth")
 # means tokens are invalidated on every restart (which is fine for dev).
 SECRET_KEY: str = os.getenv("QUICKLY_SECRET_KEY", "")
 if not SECRET_KEY:
+    if os.getenv("QUICKLY_MODE", "development").lower() == "production":
+        raise RuntimeError(
+            "QUICKLY_SECRET_KEY is not set. Refusing to start in production without it — "
+            "set QUICKLY_SECRET_KEY in your .env file."
+        )
     SECRET_KEY = secrets.token_urlsafe(64)
     log.warning(
         "QUICKLY_SECRET_KEY not set – generated ephemeral key. "
@@ -204,7 +209,6 @@ async def resolve_current_user(
 
     return user
 
-
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -328,6 +332,19 @@ async def require_admin(user=Depends(get_current_user)):
     """Dependency that raises 403 if the user is not an admin."""
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+async def require_write_access(request: Request, user=Depends(get_current_user)):
+    """Dependency that blocks write actions (POST/PUT/PATCH/DELETE) for read-only role users.
+    GET/HEAD/OPTIONS always pass through — read-only users can view everything, change nothing.
+    Checks the request method FIRST (cheap, always safe) so read requests never touch the
+    user object at all — matches how it's used elsewhere and avoids any fragility if the
+    resolved user isn't a full User instance (e.g. auth overridden in tests)."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return user
+    if user.role == "read_only":
+        raise HTTPException(status_code=403, detail="Your account is read-only — this action isn't permitted.")
     return user
 
 

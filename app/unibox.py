@@ -1,4 +1,4 @@
-"""Unibox backend services: DB queries, Gmail sync, Office 365 sync, and realtime signaling."""
+﻿"""Unibox backend services: DB queries, Gmail sync, Office 365 sync, and realtime signaling."""
 
 from __future__ import annotations
 
@@ -52,6 +52,62 @@ GMAIL_METADATA_HEADERS = [
 ]
 
 
+# Phase 5 split: pure parsing helpers live in app.services.unibox_parsing.
+# Re-exported here so existing `from app.unibox import _x` imports keep working.
+from app.services.unibox_parsing import (  # noqa: F401
+    _parse_headers,
+    _header_value,
+    _extract_email_only,
+    _parse_labels,
+    _decode_base64url,
+    _decode_gmail_body,
+    _extract_bodies,
+    _epoch_ms_to_dt,
+    _dt_to_iso,
+    _extract_bounced_recipient,
+    _strip_html_tags,
+    _strip_quoted,
+    _body_snippet,
+    _QUOTE_START_RE,
+    _MAILER_DAEMON_RE,
+    _BOUNCE_SUBJECT_RE,
+    _FINAL_RECIPIENT_RE,
+    _X_FAILED_RE,
+    _EMAIL_RE,
+    _SMTP_5XX_RE,
+    _HTML_TAG_RE,
+    _PREHEADER_RE,
+)
+
+# Phase 5 split: Gmail HTTP client lives in app.services.gmail_client.
+# Re-exported here so existing `from app.unibox import _gmail_get_profile`
+# and monkeypatch.setattr("app.unibox._gmail_get_profile", ...) keep working.
+from app.services.gmail_client import (  # noqa: F401
+    GmailAPIError,
+    GmailHistoryDelta,
+    _gmail_request_json,
+    _gmail_get_profile,
+    _gmail_list_message_ids,
+    _gmail_list_all_message_ids,
+    _gmail_list_message_ids_in_window,
+    _gmail_get_message,
+    _gmail_get_thread,
+    _gmail_history_delta,
+    _gmail_register_watch,
+    _get_or_create_sync_state,
+)
+
+# Phase 5 split: O365 Graph HTTP client lives in app.services.o365_client.
+# Re-exported here so existing `from app.unibox import X` imports keep working.
+from app.services.o365_client import (  # noqa: F401
+    GRAPH_API_BASE,
+    _graph_request_json,
+    _graph_list_messages,
+    _get_or_create_o365_sync_state,
+)
+
+
+
 def _parse_message_limit_from_env(env_name: str, *, default_raw: str, minimum: int) -> int | None:
     raw_value = (os.getenv(env_name, default_raw) or "").strip()
     try:
@@ -81,13 +137,6 @@ RECENT_RECOVERY_MAX_MESSAGES = _parse_message_limit_from_env(
 )
 
 
-class GmailAPIError(RuntimeError):
-    """Raised when Gmail API returns an error."""
-
-    def __init__(self, status_code: int, body: str):
-        super().__init__(f"Gmail API error {status_code}: {body}")
-        self.status_code = status_code
-        self.body = body
 
 
 class UniboxEventBroker:
@@ -137,31 +186,8 @@ _thread_hydration_lock = asyncio.Lock()
 _inflight_hydration_inboxes: set[int] = set()
 
 
-def _parse_headers(headers_json: str) -> list[dict[str, str]]:
-    try:
-        data = json.loads(headers_json or "[]")
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(data, list):
-        return []
-    out: list[dict[str, str]] = []
-    for item in data:
-        if isinstance(item, dict):
-            out.append(
-                {
-                    "name": str(item.get("name", "")),
-                    "value": str(item.get("value", "")),
-                }
-            )
-    return out
 
 
-def _header_value(headers_json: str, name: str) -> str:
-    lname = name.lower()
-    for hdr in _parse_headers(headers_json):
-        if hdr["name"].lower() == lname:
-            return hdr["value"]
-    return ""
 
 
 async def _single_lead_campaign_pair_for_thread(
@@ -180,418 +206,18 @@ async def _single_lead_campaign_pair_for_thread(
     return next(iter(pairs))
 
 
-def _extract_email_only(header_value: str) -> str:
-    """Extract bare email address from a From/To header value.
-
-    Handles both ``Name <email>`` and bare ``email`` formats.
-    Returns lowercase email or empty string if nothing found.
-    """
-    import re as _re
-    angle_match = _re.search(r"<([^>]+)>", header_value)
-    if angle_match:
-        return angle_match.group(1).strip().lower()
-    bare_match = _re.search(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", header_value, _re.IGNORECASE)
-    if bare_match:
-        return bare_match.group(0).strip().lower()
-    return ""
 
 
-def _parse_labels(label_ids_json: str) -> list[str]:
-    try:
-        labels = json.loads(label_ids_json or "[]")
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(labels, list):
-        return []
-    return [str(x) for x in labels]
 
 
-def _decode_base64url(data: str) -> bytes:
-    padded = data + ("=" * ((4 - (len(data) % 4)) % 4))
-    return base64.urlsafe_b64decode(padded.encode("ascii"))
 
 
-def _decode_gmail_body(data: str) -> str:
-    try:
-        return _decode_base64url(data).decode("utf-8", errors="ignore")
-    except Exception:
-        return ""
 
 
-def _extract_bodies(payload: dict[str, Any]) -> tuple[str, str]:
-    plain_parts: list[str] = []
-    html_parts: list[str] = []
-
-    def walk(part: dict[str, Any]) -> None:
-        mime_type = str(part.get("mimeType", ""))
-        body = part.get("body", {}) or {}
-        data = body.get("data")
-        if isinstance(data, str) and data:
-            decoded = _decode_gmail_body(data)
-            if mime_type == "text/plain":
-                plain_parts.append(decoded)
-            elif mime_type == "text/html":
-                html_parts.append(decoded)
-            elif not mime_type and decoded:
-                plain_parts.append(decoded)
-
-        for child in part.get("parts", []) or []:
-            if isinstance(child, dict):
-                walk(child)
-
-    if isinstance(payload, dict):
-        walk(payload)
-
-    return ("\n".join(plain_parts).strip(), "\n".join(html_parts).strip())
 
 
 def _now_epoch_ms() -> int:
     return int(time_provider.utcnow().timestamp() * 1000)
-
-
-def _epoch_ms_to_dt(ms: int | None) -> datetime | None:
-    if ms is None:
-        return None
-    try:
-        return datetime.utcfromtimestamp(ms / 1000.0)
-    except Exception:
-        return None
-
-
-def _dt_to_iso(dt: datetime | None) -> str | None:
-    if not dt:
-        return None
-    return dt.isoformat() + "Z"
-
-
-# Matches common quoted-reply markers so we can strip them from snippets.
-_QUOTE_START_RE = re.compile(
-    r"(^|\n)[ \t]*>"  # lines starting with >
-    r"|(^|\n)-{3,}"  # separator lines like ---
-    r"|\bOn .{10,120}wrote:",  # "On <date> <person> wrote:"
-    re.IGNORECASE | re.DOTALL,
-)
-
-# ── NDR / bounce-detection patterns ──────────────────────────────────────────
-# Senders that indicate an automated delivery failure notification.
-_MAILER_DAEMON_RE = re.compile(r"^(mailer-daemon|postmaster)@", re.IGNORECASE)
-# Subjects that strongly suggest an NDR.
-_BOUNCE_SUBJECT_RE = re.compile(
-    r"(delivery.*(failed|failure|status|notification|problem)"
-    r"|undeliverable"
-    r"|mail.*not.*deliver"
-    r"|returned.*mail"
-    r"|failure.*notice)",
-    re.IGNORECASE,
-)
-# DSN standard: Final-Recipient / Original-Recipient / X-Failed-Recipients
-_FINAL_RECIPIENT_RE = re.compile(
-    r"(?:Final-Recipient|Original-Recipient)\s*:\s*(?:rfc822\s*;\s*)?([^\s;,\r\n]+)",
-    re.IGNORECASE,
-)
-_X_FAILED_RE = re.compile(r"X-Failed-Recipients\s*:\s*([^\r\n,]+)", re.IGNORECASE)
-# Generic email-address pattern (used as fallback near 5xx codes).
-_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
-# Permanent SMTP error (5xx).
-_SMTP_5XX_RE = re.compile(r"\b5[0-9]{2}\b|\b5\.[0-9]\.[0-9]\b")
-
-
-def _extract_bounced_recipient(body_plain: str, body_html: str, snippet: str = "") -> str | None:
-    """Try to extract the original recipient address from an NDR/bounce email.
-
-    Tries, in order:
-    1. DSN standard headers (Final-Recipient / Original-Recipient)
-    2. X-Failed-Recipients header
-    3. Email addresses found on lines containing a 5xx SMTP error code
-    Returns the address in lower-case, or *None* if nothing is found.
-    """
-    text = body_plain or _strip_html_tags(body_html) or snippet
-
-    # 1. DSN standard
-    m = _FINAL_RECIPIENT_RE.search(text)
-    if m:
-        addr = m.group(1).strip().lower().strip("<>")
-        if "@" in addr:
-            return addr
-
-    # 2. X-Failed-Recipients
-    m = _X_FAILED_RE.search(text)
-    if m:
-        addr = m.group(1).strip().lower()
-        if "@" in addr:
-            return addr
-
-    # 3. Email address near a 5xx error line
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        if _SMTP_5XX_RE.search(line):
-            window = "\n".join(lines[max(0, i - 2) : i + 3])
-            for candidate in _EMAIL_RE.findall(window):
-                cl = candidate.lower()
-                if not _MAILER_DAEMON_RE.match(cl):
-                    return cl
-
-    return None
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
-# Hidden preheader divs should not contribute to visible snippets.
-_PREHEADER_RE = re.compile(
-    r"<div[^>]*style=[^>]*display\s*:\s*none[^>]*>.*?</div>",
-    re.IGNORECASE | re.DOTALL,
-)
-
-
-def _strip_html_tags(text: str) -> str:
-    """Strip HTML tags and decode entities to get plain text."""
-    no_preheader = _PREHEADER_RE.sub("", text)
-    no_tags = _HTML_TAG_RE.sub(" ", no_preheader)
-    return _html_lib.unescape(no_tags)
-
-
-def _strip_quoted(text: str) -> str:
-    """Return text with quoted/reply sections removed."""
-    m = _QUOTE_START_RE.search(text)
-    if m:
-        return text[: m.start()].rstrip()
-    return text
-
-
-def _body_snippet(plain: str, html: str, fallback: str = "") -> str:
-    if plain:
-        base = plain
-    elif html:
-        base = _strip_html_tags(html)
-    else:
-        base = _strip_html_tags(fallback) if "<" in fallback else fallback
-    base = _strip_quoted(base)
-    compact = " ".join(base.split())
-    return compact[:180]
-
-
-def _gmail_request_json(
-    method: str,
-    url: str,
-    access_token: str,
-    *,
-    params: dict[str, Any] | None = None,
-    payload: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    if params:
-        encoded = urllib.parse.urlencode(params, doseq=True)
-        url = f"{url}?{encoded}"
-
-    body = None
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/json",
-    }
-    if payload is not None:
-        body = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-
-    req = urllib.request.Request(url=url, data=body, method=method, headers=headers)
-
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read().decode("utf-8")
-            return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as exc:
-        body_text = ""
-        try:
-            body_text = exc.read().decode("utf-8")
-        except Exception:
-            body_text = str(exc)
-        raise GmailAPIError(exc.code, body_text) from exc
-    except Exception as exc:
-        raise GmailAPIError(0, str(exc)) from exc
-
-
-def _gmail_get_profile(access_token: str) -> dict[str, Any]:
-    return _gmail_request_json("GET", f"{GMAIL_API_ROOT}/profile", access_token)
-
-
-def _gmail_list_message_ids(
-    access_token: str,
-    *,
-    query: str | None = None,
-    max_messages: int | None = None,
-    include_spam_trash: bool = True,
-) -> list[str]:
-    out: list[str] = []
-    page_token: str | None = None
-
-    while True:
-        params: dict[str, Any] = {
-            "maxResults": 500,
-            "includeSpamTrash": "true" if include_spam_trash else "false",
-        }
-        if query:
-            params["q"] = query
-        if page_token:
-            params["pageToken"] = page_token
-        payload = _gmail_request_json("GET", f"{GMAIL_API_ROOT}/messages", access_token, params=params)
-
-        for item in payload.get("messages", []) or []:
-            if isinstance(item, dict) and item.get("id"):
-                out.append(str(item["id"]))
-                if max_messages and len(out) >= max_messages:
-                    return out
-
-        page_token = payload.get("nextPageToken")
-        if not page_token:
-            break
-
-    return out
-
-
-def _gmail_list_all_message_ids(access_token: str, *, max_messages: int | None = None) -> list[str]:
-    return _gmail_list_message_ids(access_token, max_messages=max_messages)
-
-
-def _gmail_list_message_ids_in_window(
-    access_token: str,
-    *,
-    start_dt: datetime,
-    end_dt: datetime,
-    max_messages: int | None = None,
-) -> list[str]:
-    start_unix = int(start_dt.timestamp())
-    end_unix = int(end_dt.timestamp())
-    query = f"after:{start_unix} before:{end_unix}"
-    return _gmail_list_message_ids(access_token, query=query, max_messages=max_messages)
-
-
-def _gmail_get_message(
-    access_token: str,
-    gmail_message_id: str,
-    *,
-    payload_format: str = "full",
-) -> dict[str, Any]:
-    params: dict[str, Any] = {"format": payload_format}
-    if payload_format == "metadata":
-        params["metadataHeaders"] = GMAIL_METADATA_HEADERS
-    return _gmail_request_json(
-        "GET",
-        f"{GMAIL_API_ROOT}/messages/{gmail_message_id}",
-        access_token,
-        params=params,
-    )
-
-
-def _gmail_get_thread(
-    access_token: str,
-    thread_id: str,
-    *,
-    payload_format: str = "full",
-) -> dict[str, Any]:
-    params: dict[str, Any] = {"format": payload_format}
-    if payload_format == "metadata":
-        params["metadataHeaders"] = GMAIL_METADATA_HEADERS
-    return _gmail_request_json(
-        "GET",
-        f"{GMAIL_API_ROOT}/threads/{thread_id}",
-        access_token,
-        params=params,
-    )
-
-
-@dataclass
-class GmailHistoryDelta:
-    added_ids: set[str]
-    deleted_ids: set[str]
-    touched_threads: set[str]
-    latest_history_id: str
-
-
-def _gmail_history_delta(access_token: str, start_history_id: str) -> GmailHistoryDelta:
-    page_token: str | None = None
-    added_ids: set[str] = set()
-    deleted_ids: set[str] = set()
-    touched_threads: set[str] = set()
-    latest_history_id = start_history_id
-
-    while True:
-        params: dict[str, Any] = {
-            "startHistoryId": start_history_id,
-            "maxResults": 500,
-            "historyTypes": ["messageAdded", "messageDeleted"],
-        }
-        if page_token:
-            params["pageToken"] = page_token
-
-        payload = _gmail_request_json("GET", f"{GMAIL_API_ROOT}/history", access_token, params=params)
-        latest_history_id = str(payload.get("historyId") or latest_history_id)
-
-        history_rows = payload.get("history", []) or []
-        for row in history_rows:
-            if not isinstance(row, dict):
-                continue
-            row_hid = row.get("id")
-            if row_hid:
-                latest_history_id = str(row_hid)
-
-            for entry in row.get("messagesAdded", []) or []:
-                msg = entry.get("message", {}) if isinstance(entry, dict) else {}
-                msg_id = msg.get("id")
-                thread_id = msg.get("threadId")
-                if msg_id:
-                    added_ids.add(str(msg_id))
-                if thread_id:
-                    touched_threads.add(str(thread_id))
-
-            for entry in row.get("messagesDeleted", []) or []:
-                msg = entry.get("message", {}) if isinstance(entry, dict) else {}
-                msg_id = msg.get("id")
-                thread_id = msg.get("threadId")
-                if msg_id:
-                    deleted_ids.add(str(msg_id))
-                if thread_id:
-                    touched_threads.add(str(thread_id))
-
-            # Some history rows provide only "messages" for metadata changes.
-            for msg in row.get("messages", []) or []:
-                if isinstance(msg, dict):
-                    mid = msg.get("id")
-                    tid = msg.get("threadId")
-                    if mid:
-                        added_ids.add(str(mid))
-                    if tid:
-                        touched_threads.add(str(tid))
-
-        page_token = payload.get("nextPageToken")
-        if not page_token:
-            break
-
-    return GmailHistoryDelta(
-        added_ids=added_ids,
-        deleted_ids=deleted_ids,
-        touched_threads=touched_threads,
-        latest_history_id=latest_history_id,
-    )
-
-
-def _gmail_register_watch(access_token: str, topic_name: str) -> tuple[str, datetime | None]:
-    payload = {"topicName": topic_name}
-    res = _gmail_request_json("POST", f"{GMAIL_API_ROOT}/watch", access_token, payload=payload)
-    history_id = str(res.get("historyId", ""))
-    expiration_raw = res.get("expiration")
-    expiration_dt: datetime | None = None
-    if expiration_raw:
-        try:
-            expiration_dt = datetime.utcfromtimestamp(int(expiration_raw) / 1000.0)
-        except Exception:
-            expiration_dt = None
-    return history_id, expiration_dt
-
-
-async def _get_or_create_sync_state(db: AsyncSession, inbox_id: int) -> GmailSyncState:
-    res = await db.execute(select(GmailSyncState).where(GmailSyncState.inbox_id == inbox_id))
-    state = res.scalar_one_or_none()
-    if state:
-        return state
-    state = GmailSyncState(inbox_id=inbox_id)
-    db.add(state)
-    await db.flush()
-    return state
 
 
 async def _ensure_access_token(db: AsyncSession, account: GmailAccount) -> str:
@@ -748,7 +374,7 @@ async def _classify_and_notify_bg(
                 thread_messages=thread_messages or None,
             )
             if classification is None:
-                return  # classifier failed — normal webhook already sent
+                return  # classifier failed â€” normal webhook already sent
 
             from app.models import CampaignLead as _CL
 
@@ -775,6 +401,124 @@ async def _classify_and_notify_bg(
                 elif classification == "interested":
                     cl.interest_status = "interested"
 
+                # Semi-manual mode: auto-draft and send reply when lead is interested
+                from app.models import Campaign as _Campaign
+                camp_res = await session.execute(select(_Campaign).where(_Campaign.id == camp_id))
+                camp_obj = camp_res.scalar_one_or_none()
+                if camp_obj and getattr(camp_obj, "campaign_mode", "manual") == "semi_manual":
+                    from app.ai_classifier import draft_reply as _draft_reply
+                    # Credit gate for semi_manual reply draft
+                    from app.credits import deduct_credits, get_model_preference, is_bypass_org
+                    _bypass_sm = await is_bypass_org(session, camp_obj.org_id)
+                    if not _bypass_sm:
+                        _model_sm = await get_model_preference(session, camp_obj.org_id)
+                        _credits_ok_sm = await deduct_credits(session, camp_obj.org_id, _model_sm)
+                        if not _credits_ok_sm:
+                            log.warning(
+                                "semi_manual: insufficient credits for reply draft lead_id=%s camp_id=%s",
+                                lead_id, camp_id,
+                            )
+                            return
+                    ai_draft = await _draft_reply(
+                        session, reply_text,
+                        email_subject=email_subject,
+                        email_body=email_body,
+                        thread_messages=thread_messages or None,
+                    )
+                    if ai_draft:
+                        log.info(
+                            "semi_manual: auto-reply drafted for lead_id=%s camp_id=%s len=%d",
+                            lead_id, camp_id, len(ai_draft)
+                        )
+                        # Notify org owner with AI draft
+                        from app.models import Notification, User as _NotifUser
+                        _owner_res = await session.execute(
+                            select(_NotifUser).where(_NotifUser.org_id == camp_obj.org_id, _NotifUser.is_owner == True)  # noqa: E712
+                        )
+                        _owner = _owner_res.scalar_one_or_none()
+                        if _owner:
+                            _notif = Notification(
+                                user_id=_owner.id,
+                                event_type="ai_reply_draft",
+                                title=f"AI Reply Draft - {lead_email}",
+                                message=ai_draft[:500],
+                                data_json={"lead_id": lead_id, "campaign_id": camp_id,
+                                           "lead_email": lead_email, "full_draft": ai_draft},
+                            )
+                            session.add(_notif)
+
+                elif camp_obj and getattr(camp_obj, "campaign_mode", "manual") == "full_ai" and classification == "interested":
+                    from app.ai_classifier import draft_reply as _draft_reply_fa
+                    from app.jobs import check_full_ai_auto_send_allowed, send_reply_email
+                    from app.models import Lead as _Lead, Notification as _Notif2, User as _NotifUser2
+
+                    # Credit gate for full_ai reply draft
+                    from app.credits import deduct_credits, get_model_preference, is_bypass_org
+                    _bypass_fa = await is_bypass_org(session, camp_obj.org_id)
+                    if not _bypass_fa:
+                        _model_fa = await get_model_preference(session, camp_obj.org_id)
+                        _credits_ok = await deduct_credits(session, camp_obj.org_id, _model_fa)
+                        if not _credits_ok:
+                            log.warning(
+                                "full_ai: insufficient credits for reply draft lead_id=%s camp_id=%s",
+                                lead_id, camp_id,
+                            )
+                            return
+
+                    ai_draft_fa = await _draft_reply_fa(
+                        session, reply_text,
+                        email_subject=email_subject,
+                        email_body=email_body,
+                        thread_messages=thread_messages or None,
+                    )
+
+                    if ai_draft_fa:
+                        _allowed, _reason = await check_full_ai_auto_send_allowed(
+                            session, reply_text, camp_id,
+                        )
+                        _sent_ok = False
+
+                        if _allowed:
+                            _lead_res = await session.execute(select(_Lead).where(_Lead.id == lead_id))
+                            _lead_obj = _lead_res.scalar_one_or_none()
+                            if _lead_obj:
+                                _subj_fa = email_subject if (email_subject or "").lower().startswith("re:") else f"Re: {email_subject}"
+                                _send_result = await send_reply_email(
+                                    session, _lead_obj, camp_obj, _subj_fa, ai_draft_fa,
+                                )
+                                if _send_result is not None and type(_send_result).__name__ == "SendResult":
+                                    _sent_ok = True
+                                    log.info(
+                                        "full_ai: auto-sent reply for lead_id=%s camp_id=%s",
+                                        lead_id, camp_id,
+                                    )
+                                else:
+                                    log.warning(
+                                        "full_ai: send_reply_email failed for lead_id=%s camp_id=%s, falling back to draft",
+                                        lead_id, camp_id,
+                                    )
+                        else:
+                            log.info(
+                                "full_ai: reply not auto-sent for lead_id=%s camp_id=%s (%s)",
+                                lead_id, camp_id, _reason,
+                            )
+
+                        _owner_res2 = await session.execute(
+                            select(_NotifUser2).where(_NotifUser2.org_id == camp_obj.org_id, _NotifUser2.is_owner == True)  # noqa: E712
+                        )
+                        _owner2 = _owner_res2.scalar_one_or_none()
+                        if _owner2:
+                            session.add(_Notif2(
+                                user_id=_owner2.id,
+                                event_type="ai_reply_sent" if _sent_ok else "ai_reply_draft",
+                                title=(f"AI Reply Sent - {lead_email}" if _sent_ok else f"AI Reply Draft - {lead_email}"),
+                                message=ai_draft_fa[:500],
+                                campaign_id=camp_id,
+                                lead_id=lead_id,
+                                data_json={"lead_id": lead_id, "campaign_id": camp_id,
+                                           "lead_email": lead_email, "full_draft": ai_draft_fa,
+                                           "auto_sent": _sent_ok},
+                            ))
             await session.flush()
             from app.routers.schedule import recalculate_all_campaigns
 
@@ -916,16 +660,22 @@ async def _upsert_message_from_gmail(
 
         if from_email_addr:
             lead_res = await db.execute(
-                select(Lead).where(func.lower(Lead.email) == from_email_addr)
+                select(Lead)
+                .outerjoin(
+                    EmailLog,
+                    (EmailLog.lead_id == Lead.id) & (EmailLog.thread_id == thread_id),
+                )
+                .where(func.lower(Lead.email) == from_email_addr)
+                .order_by(EmailLog.id.is_(None), Lead.id)
             )
-            lead = lead_res.scalar_one_or_none()
+            lead = lead_res.scalars().first()
 
         if lead is None:
             pair = await _single_lead_campaign_pair_for_thread(db, thread_id)
             if pair is not None:
                 lid, cid = pair
                 lead_res_fb = await db.execute(select(Lead).where(Lead.id == lid))
-                lead = lead_res_fb.scalar_one_or_none()
+                lead = lead_res_fb.scalars().first()
                 if lead is not None:
                     campaign_ids_from_thread_only = [cid]
 
@@ -1084,6 +834,10 @@ async def _upsert_message_from_gmail(
                                 "NDR bounce detected for lead_id=%s email=%s (inbox_id=%s)",
                                 b_lead.id, bounced_addr, inbox_id,
                             )
+                            from app.suppression import add_to_suppression_list
+                            await add_to_suppression_list(
+                                db, getattr(b_lead, "org_id", None), b_lead.email, reason="bounced",
+                            )
                             for _bcl in b_rows:
                                 _bcl.enrollment_status = "bounced"
                             b_cl_ids = [r.id for r in b_rows]
@@ -1124,7 +878,7 @@ async def _upsert_message_from_gmail(
 
     # ---------- Sent-to-lead detection (outbound messages only) ----------
     # Mark the thread as a lead thread when we sent the email to a lead,
-    # even if the lead hasn't replied yet — so the unibox shows it.
+    # even if the lead hasn't replied yet â€” so the unibox shows it.
     if created and "SENT" in [lbl.upper() for lbl in labels]:
         to_email_addr = _extract_email_only(
             _header_value(headers_json, "To")
@@ -1391,6 +1145,7 @@ async def list_unibox_conversations(
     page_size: int,
     leads_only: bool = False,
     lead_status: str | None = None,
+    org_id: int | None = None,
 ) -> dict[str, Any]:
     offset = (page - 1) * page_size
 
@@ -1424,7 +1179,7 @@ async def list_unibox_conversations(
         .subquery()
     )
 
-    # ── Gmail threads ─────────────────────────────────────────────────────
+    # â”€â”€ Gmail threads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     latest_message_sq = (
         select(
             GmailMessage.inbox_id.label("inbox_id"),
@@ -1473,14 +1228,17 @@ async def list_unibox_conversations(
             ),
         )
     )
+    if org_id is not None:
+        gmail_stmt = gmail_stmt.where(Inbox.org_id == org_id)
     if leads_only:
+        gmail_stmt = gmail_stmt.where(GmailThread.hidden.is_(False))
         gmail_stmt = gmail_stmt.where(GmailThread.is_lead_thread.is_(True))
     if lead_status:
         gmail_stmt = gmail_stmt.where(_unibox_lead_status_filter_criterion(lead_sq, lead_status))
 
     gmail_rows = (await db.execute(gmail_stmt)).all()
 
-    # ── Office 365 threads ────────────────────────────────────────────────
+    # â”€â”€ Office 365 threads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     o365_latest_msg_sq = (
         select(
             Office365Message.inbox_id.label("inbox_id"),
@@ -1526,14 +1284,17 @@ async def list_unibox_conversations(
             ),
         )
     )
+    if org_id is not None:
+        o365_stmt = o365_stmt.where(Inbox.org_id == org_id)
     if leads_only:
         o365_stmt = o365_stmt.where(Office365Thread.is_lead_thread.is_(True))
+        o365_stmt = o365_stmt.where(Office365Thread.hidden.is_(False))
     if lead_status:
         o365_stmt = o365_stmt.where(_unibox_lead_status_filter_criterion(lead_sq, lead_status))
 
     o365_rows = (await db.execute(o365_stmt)).all()
 
-    # ── Merge both providers into a single sorted list ────────────────────
+    # â”€â”€ Merge both providers into a single sorted list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     items: list[dict[str, Any]] = []
 
     for row in gmail_rows:
@@ -1748,7 +1509,7 @@ async def get_thread_messages(
         ).all()
         inbox_ids = [int(row[0]) for row in inbox_rows]
         if not inbox_ids:
-            # Not in Gmail – try Office 365
+            # Not in Gmail â€“ try Office 365
             o365_rows = (
                 await db.execute(
                     select(Office365Message.inbox_id)
@@ -1776,7 +1537,7 @@ async def get_thread_messages(
     )
     thread_with_account = thread_row.first()
     if not thread_with_account:
-        # Not a Gmail thread – try Office 365
+        # Not a Gmail thread â€“ try Office 365
         return await _get_o365_thread_messages(db, thread_id=thread_id, inbox_id=chosen_inbox_id)
     thread, account_email = thread_with_account
 
@@ -2590,126 +2351,11 @@ async def queue_backfill_for_all_inboxes(
 # Office 365 / Microsoft Graph sync implementation
 # ---------------------------------------------------------------------------
 
-GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 O365_SYNC_WINDOW_DAYS = 7
 
 
-def _graph_request_json(
-    method: str,
-    url: str,
-    access_token: str,
-    *,
-    params: dict[str, Any] | None = None,
-    payload: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Make an HTTP request to Microsoft Graph API and return JSON."""
-    if params:
-        encoded = urllib.parse.urlencode(params, doseq=True)
-        url = f"{url}?{encoded}"
-
-    body = None
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/json",
-    }
-    if payload is not None:
-        body = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-
-    req = urllib.request.Request(url=url, data=body, method=method, headers=headers)
-
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read().decode("utf-8")
-            return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as exc:
-        body_text = ""
-        try:
-            body_text = exc.read().decode("utf-8")
-        except Exception:
-            body_text = str(exc)
-        raise GmailAPIError(exc.code, body_text) from exc
-    except Exception as exc:
-        raise GmailAPIError(0, str(exc)) from exc
 
 
-def _graph_list_messages(
-    access_token: str,
-    *,
-    folder: str = "",
-    top: int = 100,
-    filter_str: str = "",
-    select_fields: str = "id,conversationId,internetMessageId,receivedDateTime,subject,from,toRecipients,body,isRead,hasAttachments",
-    delta_link: str = "",
-    use_delta_endpoint: bool = False,
-) -> tuple[list[dict[str, Any]], str]:
-    """Fetch messages from Microsoft Graph, returning (messages, next_delta_link).
-
-    If *delta_link* is provided, uses it for incremental sync.
-    If *use_delta_endpoint* is True (and no delta_link), uses the /delta endpoint
-    so that Graph returns a deltaLink usable for future incremental syncs.
-    Otherwise fetches from the regular messages endpoint with optional folder/filter.
-    """
-    messages: list[dict[str, Any]] = []
-    next_link: str | None = None
-
-    if delta_link:
-        url = delta_link
-    elif use_delta_endpoint:
-        _folder = folder or "Inbox"
-        base = f"{GRAPH_API_BASE}/me/mailFolders/{_folder}/messages/delta"
-        params: dict[str, str] = {
-            "$top": str(top),
-            "$select": select_fields,
-            # NOTE: $orderby is not supported on the delta endpoint
-        }
-        if filter_str:
-            params["$filter"] = filter_str
-        url = f"{base}?{urllib.parse.urlencode(params)}"
-    else:
-        base = f"{GRAPH_API_BASE}/me/mailFolders/{folder}/messages" if folder else f"{GRAPH_API_BASE}/me/messages"
-        params = {
-            "$top": str(top),
-            "$select": select_fields,
-            "$orderby": "receivedDateTime desc",
-        }
-        if filter_str:
-            params["$filter"] = filter_str
-        url = f"{base}?{urllib.parse.urlencode(params)}"
-
-    new_delta_link = ""
-
-    while url:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/json",
-                "Prefer": "odata.maxpagesize=100",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body_text = ""
-            try:
-                body_text = exc.read().decode("utf-8")
-            except Exception:
-                pass
-            raise GmailAPIError(exc.code, body_text) from exc
-
-        for msg in data.get("value", []):
-            if isinstance(msg, dict):
-                messages.append(msg)
-
-        # Check for delta link or next page
-        if "@odata.deltaLink" in data:
-            new_delta_link = data["@odata.deltaLink"]
-        next_link = data.get("@odata.nextLink")
-        url = next_link if next_link else ""
-
-    return messages, new_delta_link
 
 
 async def _ensure_o365_access_token(db: AsyncSession, account: Office365Account) -> str:
@@ -2766,15 +2412,6 @@ async def _o365_call_with_refresh(
         raise
 
 
-async def _get_or_create_o365_sync_state(db: AsyncSession, inbox_id: int) -> Office365SyncState:
-    res = await db.execute(select(Office365SyncState).where(Office365SyncState.inbox_id == inbox_id))
-    state = res.scalar_one_or_none()
-    if state:
-        return state
-    state = Office365SyncState(inbox_id=inbox_id)
-    db.add(state)
-    await db.flush()
-    return state
 
 
 async def _upsert_o365_thread(
@@ -2928,7 +2565,7 @@ async def _sync_inbox_office365(
     sync_start = sync_end - timedelta(days=O365_SYNC_WINDOW_DAYS)
     date_filter = f"receivedDateTime ge {sync_start.strftime('%Y-%m-%dT%H:%M:%SZ')}"
 
-    # ── Helper: sync one folder (Inbox / SentItems / JunkEmail) ────────────
+    # â”€â”€ Helper: sync one folder (Inbox / SentItems / JunkEmail) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     async def _sync_folder(
         folder: str,
         delta_attr: str,
@@ -2983,7 +2620,7 @@ async def _sync_inbox_office365(
         await db.flush()
         return folder_messages
 
-    # ── Sync Inbox ────────────────────────────────────────────────────────
+    # â”€â”€ Sync Inbox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     inbox_messages = await _sync_folder("Inbox", "delta_link")
     for idx, msg in enumerate(inbox_messages, start=1):
         row, _created = await _upsert_o365_message(db, inbox.id, msg)
@@ -2996,7 +2633,7 @@ async def _sync_inbox_office365(
                 inbox.id, idx, len(inbox_messages),
             )
 
-    # ── Sync SentItems ────────────────────────────────────────────────────
+    # â”€â”€ Sync SentItems â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     sent_messages = await _sync_folder("SentItems", "sent_delta_link")
     for idx, msg in enumerate(sent_messages, start=1):
         row, _created = await _upsert_o365_message(db, inbox.id, msg)
@@ -3009,7 +2646,7 @@ async def _sync_inbox_office365(
                 inbox.id, idx, len(sent_messages),
             )
 
-    # ── Sync JunkEmail (Spam/Junk) ─────────────────────────────────────────
+    # â”€â”€ Sync JunkEmail (Spam/Junk) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     junk_messages = await _sync_folder("JunkEmail", "junk_delta_link")
     for idx, msg in enumerate(junk_messages, start=1):
         row, _created = await _upsert_o365_message(db, inbox.id, msg)
@@ -3065,9 +2702,15 @@ async def _detect_o365_lead_replies(
             continue
 
         lead_res = await db.execute(
-            select(Lead).where(func.lower(Lead.email) == from_addr)
+            select(Lead)
+            .outerjoin(
+                EmailLog,
+                (EmailLog.lead_id == Lead.id) & (EmailLog.thread_id == conv_id),
+            )
+            .where(func.lower(Lead.email) == from_addr)
+            .order_by(EmailLog.id.is_(None), Lead.id)
         )
-        lead = lead_res.scalar_one_or_none()
+        lead = lead_res.scalars().first()
         campaign_ids_from_thread_only: list[int] | None = None
         if lead is None:
             pair = await _single_lead_campaign_pair_for_thread(db, conv_id)
@@ -3178,7 +2821,7 @@ async def _detect_o365_lead_replies(
                 lead.email, camp_id, inbox.id, conv_id,
             )
 
-    # ── NDR / delayed bounce detection ────────────────────────────────────
+    # â”€â”€ NDR / delayed bounce detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # After processing normal lead replies, iterate again over the same batch
     # looking for mailer-daemon / postmaster bounce notifications.
     for msg in messages:
@@ -3221,6 +2864,10 @@ async def _detect_o365_lead_replies(
         log.info(
             "O365 NDR bounce detected for lead_id=%s email=%s (inbox_id=%s)",
             b_lead.id, bounced_addr, inbox.id,
+        )
+        from app.suppression import add_to_suppression_list
+        await add_to_suppression_list(
+            db, getattr(b_lead, "org_id", None), b_lead.email, reason="bounced",
         )
         for _bcl in b_rows_o365:
             _bcl.enrollment_status = "bounced"

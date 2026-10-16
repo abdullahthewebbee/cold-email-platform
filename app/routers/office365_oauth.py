@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
+from app.auth import get_current_user, get_current_org_id
 from app.settings_manager import settings
 from app.database import get_db
 from app.models import Inbox, Office365Account, OAuthState
@@ -91,6 +91,7 @@ async def office365_authorize(
     ramp_up_step_size: int = 1,
     db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
+    org_id: int | None = Depends(get_current_org_id),
 ):
     """Redirect user to Microsoft consent screen."""
     from app.app_settings import get_office365_oauth_credentials
@@ -104,7 +105,7 @@ async def office365_authorize(
     csrf_state = OAuthState(
         state_token=csrf_token,
         purpose="inbox_microsoft",
-        metadata_json=json.dumps({"display_name": display_name, "max_per_day": max_per_day, "ramp_up_enabled": ramp_up_enabled, "ramp_up_start": ramp_up_start, "ramp_up_step_size": ramp_up_step_size}),
+        metadata_json=json.dumps({"display_name": display_name, "max_per_day": max_per_day, "ramp_up_enabled": ramp_up_enabled, "ramp_up_start": ramp_up_start, "ramp_up_step_size": ramp_up_step_size, "org_id": org_id}),
         expires_at=utcnow() + timedelta(minutes=10),
     )
     db.add(csrf_state)
@@ -116,6 +117,7 @@ async def office365_authorize(
         "ramp_up_enabled": ramp_up_enabled,
         "ramp_up_start": ramp_up_start,
         "ramp_up_step_size": ramp_up_step_size,
+        "org_id": org_id,
         "_csrf": csrf_token,
     })
 
@@ -155,6 +157,7 @@ async def office365_callback(
         state_data = {}
     display_name = state_data.get("display_name", "")
     max_per_day = state_data.get("max_per_day", 50)
+    org_id = state_data.get("org_id")
     wait_minutes_between = state_data.get("wait_minutes_between", 5)
     max_jitter_seconds = state_data.get("max_jitter_seconds", 180)
     tracking_domain = state_data.get("tracking_domain", "") or None
@@ -206,8 +209,8 @@ async def office365_callback(
     if not user_email:
         raise HTTPException(502, "Failed to get email address from Microsoft")
 
-    # Check if inbox already exists for this email
-    result = await db.execute(select(Inbox).where(Inbox.email == user_email))
+    # Check if inbox already exists for this email, scoped to this org
+    result = await db.execute(select(Inbox).where(Inbox.email == user_email, Inbox.org_id == org_id))
     inbox = result.scalar_one_or_none()
 
     if inbox:
@@ -236,6 +239,7 @@ async def office365_callback(
             db.add(oa)
     else:
         inbox = Inbox(
+            org_id=org_id,
             email=user_email,
             display_name=display_name or user_email.split("@")[0],
             max_emails_per_day=max_per_day,

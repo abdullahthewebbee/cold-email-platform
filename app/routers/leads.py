@@ -813,7 +813,9 @@ async def import_recover_csv(
 
 
 @router.post("", response_model=LeadResponse)
-async def create_lead(data: LeadCreate, db: AsyncSession = Depends(get_db)):
+async def create_lead(
+    db: AsyncSession = Depends(get_db),
+):
     raise HTTPException(
         405,
         "Creating leads without a campaign is not allowed; use POST /api/campaigns/{campaign_id}/leads",
@@ -902,7 +904,7 @@ async def update_lead(
         enqueue_global_recalculate(background_tasks)
 
     result2 = await db.execute(
-        _lead_query_with_campaigns().where(Lead.id == lead_id),
+        _lead_query_with_campaigns().where(Lead.id == lead_id, Lead.org_id == org_id),
     )
     lead_loaded = result2.scalar_one()
     opened, clicked, replied = await _engagement_pair_sets(db, [lead_id])
@@ -930,7 +932,7 @@ async def recover_lead(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        _lead_query_with_campaigns().where(Lead.id == lead_id),
+        _lead_query_with_campaigns().where(Lead.id == lead_id, Lead.org_id == org_id),
     )
     lead = result.scalar_one_or_none()
     if not lead:
@@ -961,7 +963,7 @@ async def recover_lead(
     await _finalize_lead_recovery(db, [lead_id], verify, background_tasks)
 
     result3 = await db.execute(
-        _lead_query_with_campaigns().where(Lead.id == lead_id),
+        _lead_query_with_campaigns().where(Lead.id == lead_id, Lead.org_id == org_id),
     )
     lead_out = result3.scalar_one()
     opened, clicked, replied = await _engagement_pair_sets(db, [lead_id])

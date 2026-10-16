@@ -1,13 +1,7 @@
 import { useState } from 'react';
-import { Card } from '../components/ui/Card';
-import {
-  RiShieldCheckLine,
-  RiMailSendLine,
-  RiFileTextLine,
-  RiAlertLine,
-  RiCheckLine,
-  RiArrowDownSLine,
-} from 'react-icons/ri';
+import { RiShieldCheckLine, RiMailSendLine, RiFileTextLine, RiAlertLine, RiCheckLine, RiArrowDownSLine } from '../components/ui/aegisRi';
+
+/* ── data ──────────────────────────────────────────────────────────────── */
 
 const sections = [
   {
@@ -22,7 +16,7 @@ const sections = [
       },
       {
         title: 'Use a separate domain for cold outreach',
-        body: 'Never send cold emails from your main business domain. Use a separate domain or subdomain just for outreach. If something goes wrong — high bounces, spam complaints — only that domain takes the hit. Your main domain stays clean.',
+        body: "Never send cold emails from your main business domain. Use a separate domain or subdomain just for outreach. If something goes wrong — high bounces, spam complaints — only that domain takes the hit. Your main domain stays clean.",
         tag: 'Required',
       },
       {
@@ -32,7 +26,7 @@ const sections = [
       },
       {
         title: 'Verify your contact list',
-        body: 'Always verify your list before launching a campaign. Go to Settings → Features → Email verification and enable it. You can connect MailTester Ninja — it\'s cheap (under $20) and gives you a very high verification limit — or set up a custom provider. Once enabled, new leads added to any campaign are verified automatically.',
+        body: "Always verify your list before launching a campaign. Go to Settings → Features → Email verification and enable it. You can connect MailTester Ninja — it's cheap (under $20) and gives you a very high verification limit — or set up a custom provider. Once enabled, new leads added to any campaign are verified automatically.",
         tag: 'Recommended',
       },
     ],
@@ -44,7 +38,7 @@ const sections = [
     rules: [
       {
         title: 'Plain text vs HTML — what you actually need',
-        body: 'If you are not tracking opens or clicks, send plain text. It looks personal, performs better, and avoids spam filters entirely. If you want to track opens or clicks, your email must be sent as HTML — that\'s what makes tracking technically possible. But if you\'re just starting out or sending low volume, plain text and tracking reply rates is more than enough. Compare your reply rate to industry benchmarks and go from there.',
+        body: "If you are not tracking opens or clicks, send plain text. It looks personal, performs better, and avoids spam filters entirely. If you want to track opens or clicks, your email must be sent as HTML — that's what makes tracking technically possible. But if you're just starting out or sending low volume, plain text and tracking reply rates is more than enough.",
         tag: null,
       },
       {
@@ -54,7 +48,7 @@ const sections = [
       },
       {
         title: 'Write like a human',
-        body: 'Short sentences. Direct point. No buzzwords, no "I hope this email finds you well." Write the way you\'d talk to someone in person. Long paragraphs and formal language get skimmed or ignored.',
+        body: "Short sentences. Direct point. No buzzwords, no \"I hope this email finds you well.\" Write the way you'd talk to someone in person. Long paragraphs and formal language get skimmed or ignored.",
         tag: null,
       },
       {
@@ -81,7 +75,7 @@ const sections = [
     rules: [
       {
         title: 'Send during recipient business hours',
-        body: 'Send emails when your recipient is likely at their desk, not when it\'s convenient for you. An email that arrives at 3am sits under a pile of others by the time they wake up.',
+        body: "Send emails when your recipient is likely at their desk, not when it's convenient for you. An email that arrives at 3am sits under a pile of others by the time they wake up.",
         tag: null,
       },
       {
@@ -96,7 +90,7 @@ const sections = [
       },
       {
         title: 'Keep sequences to 2-3 emails',
-        body: 'More follow-ups do not mean more replies. Past the third email, response rates drop and spam complaint rates rise. Respect people\'s time.',
+        body: "More follow-ups do not mean more replies. Past the third email, response rates drop and spam complaint rates rise. Respect people's time.",
         tag: null,
       },
     ],
@@ -108,12 +102,12 @@ const sections = [
     rules: [
       {
         title: 'Remove bounced addresses immediately',
-        body: 'When an address bounces, it means it doesn\'t exist or can\'t receive mail. Remove it and never email it again. Keep your bounce rate under 2% — going above this triggers throttling and blocks from major mail providers. handled automatically if you enable email verification, but if you don\'t, make sure to check your bounce reports after every campaign and remove any bad addresses.',
+        body: "When an address bounces, it means it doesn't exist or can't receive mail. Remove it and never email it again. Keep your bounce rate under 2% — going above this triggers throttling and blocks from major mail providers.",
         tag: 'Critical',
       },
       {
         title: 'Honor every unsubscribe',
-        body: 'Anyone who asks to stop receiving emails — whether they click unsubscribe or reply with "stop" or "remove me" — must be permanently removed from all campaigns. This is both a spam trigger and a legal requirement under CAN-SPAM, GDPR, and most other email laws. No exceptions. handled automatically if you have email classification enabled and use unsubscribe headers and links in the email.',
+        body: 'Anyone who asks to stop receiving emails — whether they click unsubscribe or reply with "stop" or "remove me" — must be permanently removed from all campaigns. This is both a spam trigger and a legal requirement under CAN-SPAM, GDPR, and most other email laws. No exceptions.',
         tag: 'Critical',
       },
       {
@@ -125,13 +119,6 @@ const sections = [
   },
 ];
 
-const tagStyles = {
-  Required:    'bg-red-100 text-red-700 border border-red-200',
-  Critical:    'bg-red-100 text-red-700 border border-red-200',
-  Recommended: 'bg-amber-100 text-amber-700 border border-amber-200',
-  Tip:         'bg-teal-100 text-teal-700 border border-teal-200',
-};
-
 const metrics = [
   { label: 'Bounce rate',             safe: 'Under 2%',   danger: 'Above 3%' },
   { label: 'Spam complaint rate',     safe: 'Under 0.1%', danger: 'Above 0.3%' },
@@ -140,52 +127,222 @@ const metrics = [
   { label: 'Warm-up period',          safe: '2-4 weeks',  danger: 'Skipping it' },
 ];
 
-function Tag({ label }) {
-  const cls = tagStyles[label];
-  if (!cls) return null;
-  return (
-    <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded whitespace-nowrap flex-shrink-0 ${cls}`}>
-      {label}
-    </span>
-  );
+/* ── scoped styles ─────────────────────────────────────────────────────── */
+const CSS = `
+.dt-hero {
+  background: var(--gold-dim);
+  padding: 2rem 2rem 1.75rem;
 }
+.dt-hero-eyebrow {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 0.4rem;
+}
+.dt-hero-title {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.3rem;
+}
+.dt-hero-sub {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin: 0 0 1.25rem;
+}
+.dt-tab-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.dt-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.35rem 0.85rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--border);
+  background: var(--gold-hover);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.dt-tab-btn:hover { background: var(--gold-dim); color: var(--text); }
+.dt-tab-btn.active {
+  background: var(--do-gold);
+  border-color: var(--do-gold);
+  color: var(--on-gold);
+  font-weight: 700;
+}
+.dt-content {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.75rem 2rem 3rem;
+}
+.dt-rule {
+  border: 1px solid var(--do-border);
+  border-radius: 0.5rem;
+  background: var(--do-surface);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+.dt-rule:hover { border-color: var(--do-gold); background: var(--do-cream); }
+.dt-rule.open  { border-color: var(--do-gold); background: var(--do-cream); }
+.dt-rule-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+.dt-rule-num {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--do-gold);
+  width: 1.5rem;
+  flex-shrink: 0;
+  text-align: right;
+}
+.dt-rule-title {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.5rem;
+}
+.dt-rule-title-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--do-text);
+  line-height: 1.4;
+}
+.dt-chevron {
+  flex-shrink: 0;
+  color: var(--do-text-muted);
+  line-height: 0;
+  transition: transform 0.25s;
+}
+.dt-chevron.open { transform: rotate(180deg); }
+.dt-rule-body-wrap {
+  display: grid;
+  transition: grid-template-rows 0.28s ease;
+}
+.dt-rule-body-wrap.open  { grid-template-rows: 1fr; }
+.dt-rule-body-wrap.closed { grid-template-rows: 0fr; }
+.dt-rule-body-inner { overflow: hidden; }
+.dt-rule-body {
+  padding: 0.75rem 1rem 1rem 3.25rem;
+  font-size: 0.82rem;
+  color: var(--do-text-muted);
+  line-height: 1.65;
+  border-top: 1px solid var(--do-border);
+}
+.dt-tag {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.25rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dt-tag-required    { background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger-line); }
+.dt-tag-critical    { background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger-line); }
+.dt-tag-recommended { background: var(--warning-dim); color: var(--warning); border: 1px solid var(--warning-line); }
+.dt-tag-tip         { background: var(--do-gold-bg); color: var(--do-gold-dark); border: 1px solid var(--do-gold); }
+.dt-table-wrap {
+  border: 1px solid var(--do-border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  margin-top: 0.75rem;
+}
+.dt-table-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  background: var(--do-cream);
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--do-border);
+}
+.dt-table-head-cell {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--do-text-muted);
+}
+.dt-table-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--do-border);
+  align-items: center;
+}
+.dt-table-row:last-child { border-bottom: none; }
+.dt-table-row:nth-child(even) { background: var(--do-cream); }
+.dt-table-metric { font-weight: 600; color: var(--do-text); }
+.dt-table-safe   { display: flex; align-items: center; gap: 0.3rem; color: var(--success); font-weight: 500; }
+.dt-table-danger { display: flex; align-items: center; gap: 0.3rem; color: var(--danger); font-weight: 500; }
+.dt-section-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--do-text);
+  margin: 0 0 0.75rem;
+}
+`;
+
+/* ── Tag ───────────────────────────────────────────────────────────────── */
+
+function Tag({ label }) {
+  if (!label) return null;
+  const cls = {
+    Required: 'dt-tag-required',
+    Critical: 'dt-tag-critical',
+    Recommended: 'dt-tag-recommended',
+    Tip: 'dt-tag-tip',
+  }[label];
+  if (!cls) return null;
+  return <span className={`dt-tag ${cls}`}>{label}</span>;
+}
+
+/* ── Rule accordion ────────────────────────────────────────────────────── */
 
 function Rule({ rule, index }) {
   const [open, setOpen] = useState(false);
   return (
-    <div
-      onClick={() => setOpen(v => !v)}
-      className={`rounded-lg border shadow-sm cursor-pointer transition-colors duration-150 ${
-        open
-          ? 'bg-gray-50 border-gray-300'
-          : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-      }`}
-    >
-      {/* Header row — never compresses */}
-      <div className="flex items-center gap-3 px-5 py-4">
-        <span className="text-xs font-semibold text-gray-300 w-6 flex-shrink-0 text-right tabular-nums">
-          {String(index + 1).padStart(2, '0')}
-        </span>
-        <div className="flex-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-medium text-gray-800 leading-snug">{rule.title}</span>
-          {rule.tag && <Tag label={rule.tag} />}
+    <div className={`dt-rule ${open ? 'open' : ''}`} onClick={() => setOpen(v => !v)}>
+      <div className="dt-rule-head">
+        <span className="dt-rule-num">{String(index + 1).padStart(2, '0')}</span>
+        <div className="dt-rule-title">
+          <span className="dt-rule-title-text">{rule.title}</span>
+          <Tag label={rule.tag} />
         </div>
-        <span className={`text-gray-400 flex-shrink-0 transition-transform duration-300 ${open ? 'rotate-180' : 'rotate-0'}`}>
+        <span className={`dt-chevron ${open ? 'open' : ''}`}>
           <RiArrowDownSLine size={18} />
         </span>
       </div>
-
-      {/* Animated body — grid trick for smooth height transition */}
-      <div className={`grid transition-all duration-300 ease-in-out ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-        <div className="overflow-hidden">
-          <p className="px-5 py-4 pl-14 text-sm text-gray-600 leading-relaxed border-t border-gray-100">
-            {rule.body}
-          </p>
+      <div className={`dt-rule-body-wrap ${open ? 'open' : 'closed'}`}>
+        <div className="dt-rule-body-inner">
+          <p className="dt-rule-body">{rule.body}</p>
         </div>
       </div>
     </div>
   );
 }
+
+/* ── main ──────────────────────────────────────────────────────────────── */
 
 export default function DeliverabilityTips() {
   const [activeSection, setActiveSection] = useState('setup');
@@ -199,73 +356,63 @@ export default function DeliverabilityTips() {
   });
 
   return (
-    <div className="mx-auto min-h-0 max-w-5xl flex-1 space-y-8 overflow-y-auto p-8">
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <style>{CSS}</style>
 
-      {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-800 mb-1">Deliverability Tips</h1>
-        <p className="text-sm text-gray-500">
-          Best practices for landing in the inbox, getting read, and protecting your sender reputation.
-        </p>
+      {/* Hero */}
+      <div className="dt-hero">
+        <div className="dt-hero-eyebrow">InboxAir / Guide</div>
+        <h1 className="dt-hero-title">Deliverability Tips</h1>
+        <p className="dt-hero-sub">Best practices for landing in the inbox, getting read, and protecting your sender reputation.</p>
+        <nav className="dt-tab-row">
+          {sections.map(s => {
+            const Icon = s.icon;
+            return (
+              <button
+                key={s.id}
+                className={`dt-tab-btn ${activeSection === s.id ? 'active' : ''}`}
+                onClick={() => setActiveSection(s.id)}
+              >
+                <Icon size={14} />
+                {s.label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
-      {/* Section tabs */}
-      <div className="flex flex-wrap gap-2">
-        {sections.map(s => {
-          const Icon = s.icon;
-          const active = activeSection === s.id;
-          return (
-            <button
-              key={s.id}
-              onClick={() => setActiveSection(s.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors duration-150 ${
-                active
-                  ? 'bg-primary/10 text-primary border-primary/30'
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-800'
-              }`}
-            >
-              <Icon size={15} />
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Rules list */}
-      <div className="space-y-2">
-        {section.rules.map((rule, i) => (
-          <Rule key={rule.title} rule={rule} index={sectionOffsets[activeSection] + i} />
-        ))}
-      </div>
-
-      {/* Quick reference table */}
-      <div>
-        <h2 className="text-base font-semibold text-gray-700 mb-3">Quick Reference</h2>
-        <div className="rounded-lg border border-gray-200 overflow-hidden">
-          <div className="grid grid-cols-3 bg-gray-50 px-4 py-2.5 border-b border-gray-200">
-            {['Metric', 'Safe zone', 'Danger zone'].map(h => (
-              <span key={h} className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</span>
-            ))}
-          </div>
-          {metrics.map((m, i) => (
-            <div
-              key={m.label}
-              className={`grid grid-cols-3 px-4 py-3 text-sm ${
-                i < metrics.length - 1 ? 'border-b border-gray-100' : ''
-              } ${i % 2 === 1 ? 'bg-gray-50/50' : 'bg-white'}`}
-            >
-              <span className="text-gray-600 font-medium">{m.label}</span>
-              <span className="flex items-center gap-1 text-teal-600 font-medium">
-                <RiCheckLine size={14} className="flex-shrink-0" />{m.safe}
-              </span>
-              <span className="flex items-center gap-1 text-red-500 font-medium">
-                <RiAlertLine size={14} className="flex-shrink-0" />{m.danger}
-              </span>
-            </div>
+      {/* Content */}
+      <div className="dt-content">
+        {/* Rules */}
+        <div style={{ marginBottom: '2.5rem' }}>
+          {section.rules.map((rule, i) => (
+            <Rule key={rule.title} rule={rule} index={sectionOffsets[activeSection] + i} />
           ))}
         </div>
-      </div>
 
+        {/* Quick reference table */}
+        <div>
+          <h2 className="dt-section-title">Quick Reference</h2>
+          <div className="dt-table-wrap">
+            <div className="dt-table-head">
+              {['Metric', 'Safe zone', 'Danger zone'].map(h => (
+                <span key={h} className="dt-table-head-cell">{h}</span>
+              ))}
+            </div>
+            {metrics.map(m => (
+              <div key={m.label} className="dt-table-row">
+                <span className="dt-table-metric">{m.label}</span>
+                <span className="dt-table-safe">
+                  <RiCheckLine size={13} style={{ flexShrink: 0 }} />{m.safe}
+                </span>
+                <span className="dt-table-danger">
+                  <RiAlertLine size={13} style={{ flexShrink: 0 }} />{m.danger}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

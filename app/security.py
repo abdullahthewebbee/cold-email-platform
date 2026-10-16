@@ -282,11 +282,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' https://unpkg.com https://static.cloudflareinsights.com; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
-            "connect-src 'self' https://cloudflareinsights.com; "
-            "font-src 'self'; "
+            "script-src 'self' https://unpkg.com https://static.cloudflareinsights.com https://client.crisp.chat https://client.crisp.chat/static 'sha256-8rNs5Ijm48c0oD4PQOqWt++J6xzQ1a4Fr79dtscYVPE=' 'sha256-HC29gTunRozV3DzdTUFPR9Pqr4rrqOzKZQJfZddgTK4='; "
+            "style-src 'self' 'unsafe-inline' https://client.crisp.chat; "
+            "img-src 'self' data: https://*.crisp.chat https://image.crisp.chat; "
+            "connect-src 'self' https://cloudflareinsights.com https://client.crisp.chat wss://client.crisp.chat https://client.relay.crisp.chat wss://client.relay.crisp.chat https://*.crisp.chat; "
+            "font-src 'self' https://client.crisp.chat; "
+            "frame-src https://game.crisp.chat; "
             "frame-ancestors 'none'"
         )
         # Detect HTTPS whether the server terminates TLS directly or behind a proxy.

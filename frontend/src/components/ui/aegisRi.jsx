@@ -1,0 +1,58 @@
+import React from 'react';
+import Icon from './AegisIcon';
+
+/* Drop-in replacements for react-icons/ri names, drawn with the Aegis icon set. */
+const make = (name) => function AegisRi({ size = '1em', color, style, ...p }) {
+  return <Icon name={name} size={size} style={color ? { color, ...style } : style} {...p} />;
+};
+
+export const RiAddLine = make('plus');
+export const RiAlertLine = make('alert-triangle');
+export const RiArrowDownSLine = make('chevron-down');
+export const RiArrowLeftLine = make('arrow-left');
+export const RiArrowRightLine = make('arrow-right');
+export const RiArrowRightSLine = make('chevron-right');
+export const RiBarChartLine = make('bar-chart');
+export const RiBellLine = make('bell');
+export const RiCalendarScheduleLine = make('calendar');
+export const RiCheckDoubleLine = make('check');
+export const RiCheckLine = make('check');
+export const RiCheckboxCircleLine = make('check-circle');
+export const RiCloseCircleLine = make('x-circle');
+export const RiCloseLine = make('x');
+export const RiDeleteBinLine = make('trash-2');
+export const RiErrorWarningLine = make('alert-circle');
+export const RiEyeLine = make('eye');
+export const RiFileCopyLine = make('copy');
+export const RiFileTextLine = make('file-text');
+export const RiGlobalLine = make('globe');
+export const RiInboxLine = make('inbox');
+export const RiKey2Line = make('key');
+export const RiLightbulbLine = make('lightbulb');
+export const RiLockLine = make('lock');
+export const RiMailCheckLine = make('mail');
+export const RiMailCloseLine = make('mail');
+export const RiMailLine = make('mail');
+export const RiMailOpenLine = make('mail');
+export const RiMailSendLine = make('send');
+export const RiNotificationLine = make('bell');
+export const RiNotificationOffLine = make('bell-off');
+export const RiQuestionLine = make('help-circle');
+export const RiRefreshLine = make('refresh-cw');
+export const RiSearchLine = make('search');
+export const RiSendPlaneLine = make('send');
+export const RiSettings3Line = make('settings');
+export const RiShieldCheckLine = make('shield-check');
+export const RiSparklingLine = make('sparkles');
+export const RiSubtractLine = make('minus');
+export const RiTeamLine = make('users');
+export const RiTimeLine = make('clock');
+export const RiTimerLine = make('hourglass');
+export const RiUserLine = make('user');
+export const RiUserReceivedLine = make('user-plus');
+export const RiUserUnfollowLine = make('user-cog');
+export const RiCursorLine = make('target-2');
+export const RiPlugLine = make('link');
+export const RiRobot2Line = make('cpu');
+export const RiRocketLine = make('send-2');
+export const RiSpeedLine = make('activity');

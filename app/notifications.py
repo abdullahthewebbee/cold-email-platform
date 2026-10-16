@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import asyncio
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
@@ -25,6 +26,45 @@ from app.models import EmailNotificationConfig, Notification, User
 from app import time as time_provider
 from app.settings_manager import settings
 
+# ---------------------------------------------------------------------------
+# SSE broker — real-time notification push
+# ---------------------------------------------------------------------------
+
+class NotificationEventBroker:
+    """In-memory fan-out broker for per-user SSE clients."""
+
+    def __init__(self) -> None:
+        self._subscribers: dict[int, set[asyncio.Queue]] = {}
+        self._lock = asyncio.Lock()
+
+    async def subscribe(self, user_id: int) -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+        async with self._lock:
+            self._subscribers.setdefault(user_id, set()).add(queue)
+        return queue
+
+    async def unsubscribe(self, user_id: int, queue: asyncio.Queue) -> None:
+        async with self._lock:
+            self._subscribers.get(user_id, set()).discard(queue)
+
+    async def publish(self, user_id: int, payload: dict) -> None:
+        async with self._lock:
+            queues = list(self._subscribers.get(user_id, set()))
+        for queue in queues:
+            try:
+                queue.put_nowait(payload)
+            except asyncio.QueueFull:
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    queue.put_nowait(payload)
+                except asyncio.QueueFull:
+                    pass
+
+
+notification_events = NotificationEventBroker()
 log = logging.getLogger("quickly.notifications")
 
 
@@ -84,7 +124,11 @@ def build_notification(event_type: str, data: dict[str, Any]) -> dict[str, Any]:
         old_s = data.get("old_status", "—")
         new_s = data.get("new_status", "—")
         title = f"Lead status changed — {lead_email}"
-        message = f"**{lead_email}** status changed from *{old_s}* to *{new_s}*."
+    elif event_type == "lead.added_via_extension":
+        lead_email = data.get("lead_email", "a lead")
+        campaign = data.get("campaign_name") or (f"Campaign #{campaign_id}" if campaign_id else "a campaign")
+        title = f"Lead added via extension — {lead_email}"
+        message = f"**{lead_email}** was added to **{campaign}** using the Emissary browser extension."
     elif event_type.startswith("lead."):
         label = event_type.replace("lead.", "").replace("_", " ").title()
         lead_email = data.get("lead_email", "?")
@@ -303,6 +347,30 @@ async def create_in_app_notification(
         )
         db.add(notif)
         await db.flush()
+        # Drop the cached unread-count so the bell badge updates immediately
+        # instead of waiting for the 10s TTL to expire.
+        try:
+            from app.cache import cache_invalidate
+            await cache_invalidate(f"unread:{user_id}")
+        except Exception:
+            pass
+                # Push real-time SSE event to connected clients
+        try:
+            import json as _json
+            await notification_events.publish(user_id, {
+                "type": "notification.new",
+                "id": notif.id,
+                "event_type": notif.event_type,
+                "title": notif.title,
+                "message": notif.message,
+                "lead_id": notif.lead_id,
+                "campaign_id": notif.campaign_id,
+                "inbox_id": notif.inbox_id,
+                "created_at": notif.created_at.isoformat() if notif.created_at else None,
+                "read_at": None,
+            })
+        except Exception:
+            pass
         return notif
     except Exception:
         log.exception("Failed to create in-app notification for user=%s event=%s", user_id, event_type)

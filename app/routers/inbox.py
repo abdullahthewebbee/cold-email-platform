@@ -11,9 +11,11 @@ from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, exists, update as sa_update
+from pydantic import BaseModel
 from app.auth import get_current_user, get_current_org_id
 from app.database import get_db
 from app.models import Inbox, CampaignInbox, QueueSlot, EmailLog, CampaignLead
@@ -191,6 +193,27 @@ async def list_inboxes(db: AsyncSession = Depends(get_db), org_id: int | None = 
     return inboxes
 
 
+class SmtpTestRequest(BaseModel):
+    smtp_host: str
+    smtp_port: int
+    smtp_username: str
+    smtp_password: str
+    smtp_encryption: str = "starttls"
+
+
+@router.post("/test-smtp-connection")
+async def test_smtp_connection(data: SmtpTestRequest):
+    from app.smtp_sender import test_smtp_login
+    ok, error = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: test_smtp_login(
+            data.smtp_host, data.smtp_port, data.smtp_username, data.smtp_password, data.smtp_encryption
+        ),
+    )
+    if not ok:
+        raise HTTPException(400, error or "Connection failed")
+    return {"ok": True}
+
 @router.post("", response_model=InboxResponse)
 async def create_inbox(data: InboxCreate, db: AsyncSession = Depends(get_db), org_id: int | None = Depends(get_current_org_id)):
     # Normalise tracking domain: strip scheme, paths, whitespace
@@ -203,6 +226,11 @@ async def create_inbox(data: InboxCreate, db: AsyncSession = Depends(get_db), or
         wait_minutes_between=data.wait_minutes_between,
         max_jitter_seconds=data.max_jitter_seconds,
         provider=data.provider,
+        smtp_host=data.smtp_host,
+        smtp_port=data.smtp_port,
+        smtp_username=data.smtp_username,
+        smtp_password=data.smtp_password,
+        smtp_encryption=data.smtp_encryption,
         tracking_domain=td or None,
         ramp_up_enabled=data.ramp_up_enabled,
         ramp_up_period_days=data.ramp_up_period_days,
@@ -294,6 +322,16 @@ async def update_inbox(
         capacity_changed = True
     if data.provider is not None:
         inbox.provider = data.provider
+    if data.smtp_host is not None:
+        inbox.smtp_host = data.smtp_host
+    if data.smtp_port is not None:
+        inbox.smtp_port = data.smtp_port
+    if data.smtp_username is not None:
+        inbox.smtp_username = data.smtp_username
+    if data.smtp_password is not None:
+        inbox.smtp_password = data.smtp_password
+    if data.smtp_encryption is not None:
+        inbox.smtp_encryption = data.smtp_encryption
     if data.tracking_domain is not None:
         inbox.tracking_domain = _normalise_tracking_domain(data.tracking_domain) or None
     if data.ramp_up_enabled is not None:

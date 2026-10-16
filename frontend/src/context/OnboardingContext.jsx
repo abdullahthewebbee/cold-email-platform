@@ -2,16 +2,16 @@ import { createContext, useState, useContext, useCallback } from 'react';
 
 const OnboardingContext = createContext({
   showOnboarding: false,
-  startOnboarding: () => {},
-  completeOnboarding: () => {},
+  startOnboarding: () => { },
+  completeOnboarding: () => { },
 });
 
 export function OnboardingProvider({ children }) {
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
-      return localStorage.getItem('onboardingCompleted') !== 'true';
+      return false;
     } catch {
-      return true;
+      return false;  // ← changed true to false
     }
   });
 
@@ -21,7 +21,7 @@ export function OnboardingProvider({ children }) {
     setShowOnboarding(false);
     try {
       localStorage.setItem('onboardingCompleted', 'true');
-    } catch {}
+    } catch { }
   }, []);
 
   return (

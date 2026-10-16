@@ -1,94 +1,284 @@
 import { useState } from 'react';
-import {
-  RiCheckboxCircleLine,
-  RiErrorWarningLine,
-  RiCloseCircleLine,
-  RiGlobalLine,
-  RiFileCopyLine,
-  RiCheckLine,
-  RiSearchLine,
-} from 'react-icons/ri';
+import { RiCheckboxCircleLine, RiErrorWarningLine, RiCloseCircleLine, RiGlobalLine, RiFileCopyLine, RiCheckLine, RiSearchLine, RiShieldCheckLine } from '../components/ui/aegisRi';
 import { api } from '../api';
 
-/* ─── helpers ───────────────────────────────────────────── */
-
-function statusColor(status) {
-  switch (status) {
-    case 'fail':    return { dot: 'bg-red-500',    text: 'text-red-500',    border: 'border-red-200',    bg: 'bg-red-50',    badge: 'bg-red-100 text-red-700' };
-    case 'warning': return { dot: 'bg-yellow-400', text: 'text-yellow-600', border: 'border-yellow-200', bg: 'bg-yellow-50', badge: 'bg-yellow-100 text-yellow-700' };
-    case 'pass':    return { dot: 'bg-green-500',  text: 'text-green-600',  border: 'border-green-200',  bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700' };
-    default:        return { dot: 'bg-gray-400',   text: 'text-gray-500',   border: 'border-gray-200',   bg: 'bg-gray-50',   badge: 'bg-gray-100 text-gray-600' };
+const css = `
+  /* ── DNS Records page ── */
+  .dns-body {
+    padding: 1.75rem 2rem;
+    max-width: 780px;
+    margin: 0 auto;
   }
+
+  /* score card */
+  .dns-score-card {
+    background: var(--do-surface);
+    border: 1px solid var(--do-border);
+    border-radius: var(--do-r-lg);
+    padding: 1rem 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    box-shadow: var(--do-shadow-sm);
+  }
+  .dns-score-label { font-size: 0.72rem; color: var(--do-text4); margin: 0 0 0.15rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .dns-score-domain { font-size: 1rem; font-weight: 700; color: var(--do-text); margin: 0; font-family: var(--do-font-mono); }
+  .dns-grade { font-size: 2.4rem; font-weight: 800; line-height: 1; font-family: var(--do-font-serif); }
+  .dns-grade.A { color: var(--do-green); }
+  .dns-grade.B { color: var(--do-blue); }
+  .dns-grade.C { color: var(--do-gold-dark); }
+  .dns-grade.D { color: var(--do-orange); }
+  .dns-grade.F { color: var(--do-red); }
+  .dns-score-num { font-size: 0.78rem; color: var(--do-text4); font-family: var(--do-font-mono); }
+
+  /* overall banner */
+  .dns-overall-banner {
+    border-radius: var(--do-r);
+    padding: 0.7rem 1rem;
+    font-size: 0.83rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .dns-overall-banner.pass    { background: var(--do-green-light); border: 1px solid var(--do-green); color: var(--do-green-dark); }
+  .dns-overall-banner.warning { background: var(--do-orange-light); border: 1px solid var(--do-orange); color: var(--do-orange-dark); }
+  .dns-overall-banner.fail    { background: var(--do-red-light); border: 1px solid var(--do-red); color: var(--do-red-dark); }
+
+  /* record cards — all use design system radius */
+  .dns-record-card {
+    background: var(--do-surface);
+    border-radius: var(--do-r-lg);
+    overflow: hidden;
+    margin-bottom: 0.75rem;
+    box-shadow: var(--do-shadow-xs);
+  }
+  .dns-record-card.pass    { border: 1px solid var(--do-green); }
+  .dns-record-card.warning { border: 1px solid var(--do-orange); }
+  .dns-record-card.fail    { border: 1px solid var(--do-red); }
+  .dns-record-card.unknown { border: 1px solid var(--do-border); }
+
+  .dns-card-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 1rem;
+  }
+  .dns-card-hdr.pass    { background: var(--do-green-light); border-bottom: 1px solid var(--do-green); }
+  .dns-card-hdr.warning { background: var(--do-orange-light); border-bottom: 1px solid var(--do-orange); }
+  .dns-card-hdr.fail    { background: var(--do-red-light); border-bottom: 1px solid var(--do-red); }
+  .dns-card-hdr.unknown { background: var(--do-surf2); border-bottom: 1px solid var(--do-border); }
+
+  .dns-card-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.83rem;
+    font-weight: 700;
+    color: var(--do-text);
+    font-family: var(--do-font-mono);
+    letter-spacing: 0.05em;
+  }
+  .dns-status-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--do-r-full);
+  }
+  .dns-status-badge.pass    { background: var(--do-green-light);  color: var(--do-green-dark); border: 1px solid var(--do-green); }
+  .dns-status-badge.warning { background: var(--do-orange-light); color: var(--do-orange-dark); border: 1px solid var(--do-orange); }
+  .dns-status-badge.fail    { background: var(--do-red-light);    color: var(--do-red-dark); border: 1px solid var(--do-red); }
+  .dns-status-badge.unknown { background: var(--do-surf3);        color: var(--do-text4); border: 1px solid var(--do-border); }
+
+  .dns-card-body { padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .dns-record-mono {
+    font-family: var(--do-font-mono);
+    font-size: 0.72rem;
+    color: var(--do-text);
+    background: var(--do-surf2);
+    border: 1px solid var(--do-border);
+    border-radius: var(--do-r-sm);
+    padding: 0.5rem 0.7rem;
+    word-break: break-all;
+    line-height: 1.6;
+  }
+  .dns-msg {
+    font-size: 0.8rem;
+    color: var(--do-text3);
+    line-height: 1.55;
+    margin: 0;
+  }
+  .dns-suggested-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+  }
+  .dns-suggested-mono {
+    font-family: var(--do-font-mono);
+    font-size: 0.72rem;
+    color: var(--do-orange-dark);
+    background: var(--do-orange-light);
+    border: 1px solid var(--do-orange);
+    border-radius: var(--do-r-sm);
+    padding: 0.5rem 0.7rem;
+    word-break: break-all;
+    flex: 1;
+    line-height: 1.6;
+  }
+  .dns-copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.3rem 0.65rem;
+    border-radius: var(--do-r-sm);
+    border: 1px solid var(--do-border-dark);
+    background: var(--do-surface);
+    color: var(--do-text3);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.12s, color 0.12s;
+    white-space: nowrap;
+  }
+  .dns-copy-btn:hover { background: var(--do-surf2); color: var(--do-text); }
+  .dns-copy-btn.copied { color: var(--do-green-dark); border-color: var(--do-green); }
+
+  /* hero form */
+  .dns-hero-form {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    max-width: 560px;
+  }
+  .dns-input-row { display: flex; gap: 0.6rem; align-items: center; }
+  .dns-input-wrap { position: relative; flex: 1; }
+  .dns-input-wrap svg {
+    position: absolute; left: 0.75rem; top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    pointer-events: none;
+  }
+  .dns-input {
+    width: 100%; padding: 0.6rem 0.75rem 0.6rem 2.2rem;
+    font-size: 0.9rem; border-radius: var(--do-r-sm);
+    border: 1px solid var(--border-active);
+    background: var(--gold-dim); color: var(--text);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+  }
+  .dns-input::placeholder { color: var(--text-muted); }
+  .dns-input:focus { border-color: var(--do-gold); box-shadow: 0 0 0 3px var(--border); }
+  .dns-input-selector {
+    width: 100%; padding: 0.5rem 0.75rem;
+    font-size: 0.78rem; border-radius: var(--do-r-sm);
+    border: 1px solid var(--border);
+    background: var(--gold-hover); color: var(--text);
+    outline: none; box-sizing: border-box;
+  }
+  .dns-input-selector:focus { border-color: var(--do-gold); }
+
+  /* error */
+  .dns-error {
+    background: var(--do-red-light); border: 1px solid var(--do-red);
+    border-radius: var(--do-r); padding: 0.85rem 1.1rem;
+    font-size: 0.83rem; color: var(--do-red-dark); margin-bottom: 1rem;
+  }
+
+  /* loading */
+  @keyframes dns-spin { to { transform: rotate(360deg); } }
+  .dns-spinner {
+    width: 2.5rem; height: 2.5rem;
+    border: 3px solid var(--do-border);
+    border-top-color: var(--do-gold);
+    border-radius: 50%;
+    animation: dns-spin 0.8s linear infinite;
+    margin: 0 auto 1rem;
+  }
+  .dns-loading { text-align: center; padding: 3rem 0; color: var(--do-text3); }
+  .dns-loading p { font-size: 0.83rem; margin: 0; }
+
+  /* empty */
+  .dns-empty { text-align: center; padding: 3.5rem 1rem; color: var(--do-text3); }
+  .dns-empty-icon { opacity: 0.2; margin: 0 auto 1rem; display: block; }
+  .dns-empty h3 { font-family: var(--do-font-serif); font-size: 1.05rem; color: var(--do-text); margin: 0 0 0.4rem; font-weight: 700; }
+  .dns-empty p { font-size: 0.83rem; margin: 0 auto; max-width: 36ch; }
+`;
+
+function statusVariant(s) {
+  if (s === 'fail') return 'fail';
+  if (s === 'warning') return 'warning';
+  if (s === 'pass') return 'pass';
+  return 'unknown';
 }
-
-function statusLabel(status) {
-  switch (status) {
-    case 'fail':    return 'Fail';
-    case 'warning': return 'Warning';
-    case 'pass':    return 'Pass';
-    default:        return 'Unknown';
-  }
+function statusLabel(s) {
+  if (s === 'fail') return 'Fail';
+  if (s === 'warning') return 'Warning';
+  if (s === 'pass') return 'Pass';
+  return 'Unknown';
 }
 
 function StatusIcon({ status, size = 18 }) {
-  const cls = statusColor(status).text;
-  switch (status) {
-    case 'fail':    return <RiCloseCircleLine    size={size} className={cls} />;
-    case 'warning': return <RiErrorWarningLine   size={size} className={cls} />;
-    case 'pass':    return <RiCheckboxCircleLine size={size} className={cls} />;
-    default:        return <RiGlobalLine         size={size} className={cls} />;
-  }
+  const style = { flexShrink: 0 };
+  if (status === 'fail')    return <RiCloseCircleLine    size={size} style={{ ...style, color: 'var(--do-red)' }} />;
+  if (status === 'warning') return <RiErrorWarningLine   size={size} style={{ ...style, color: 'var(--do-orange)' }} />;
+  if (status === 'pass')    return <RiCheckboxCircleLine size={size} style={{ ...style, color: 'var(--do-green)' }} />;
+  return <RiGlobalLine size={size} style={{ ...style, color: 'var(--do-text4)' }} />;
 }
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
   const doCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {}
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
   };
   return (
-    <button
-      onClick={doCopy}
-      className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors flex-shrink-0"
-    >
-      {copied ? <RiCheckLine size={13} className="text-green-600" /> : <RiFileCopyLine size={13} />}
+    <button onClick={doCopy} className={`dns-copy-btn${copied ? ' copied' : ''}`}>
+      {copied ? <RiCheckLine size={12} /> : <RiFileCopyLine size={12} />}
       {copied ? 'Copied' : 'Copy'}
     </button>
   );
 }
 
-/* ─── record card ───────────────────────────────────────── */
+function HealthScoreHeader({ score, grade, domain }) {
+  const g = grade || 'F';
+  return (
+    <div className="dns-score-card">
+      <div>
+        <p className="dns-score-label">Deliverability Health</p>
+        <p className="dns-score-domain">{domain}</p>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
+        <span className={`dns-grade ${g}`}>{g}</span>
+        <span className="dns-score-num">{score}/100</span>
+      </div>
+    </div>
+  );
+}
 
 function RecordCard({ title, result }) {
-  const col = statusColor(result.status);
+  const v = statusVariant(result.status);
   return (
-    <div className={`rounded-xl border bg-white shadow-sm overflow-hidden ${col.border}`}>
-      <div className={`flex items-center justify-between px-4 py-3 ${col.bg} border-b ${col.border}`}>
-        <div className="flex items-center gap-2.5">
-          <StatusIcon status={result.status} />
-          <span className="font-semibold text-gray-800 text-sm">{title}</span>
+    <div className={`dns-record-card ${v}`}>
+      <div className={`dns-card-hdr ${v}`}>
+        <div className="dns-card-title">
+          <StatusIcon status={result.status} size={15} />
+          {title}
         </div>
-        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${col.badge}`}>
-          {statusLabel(result.status)}
-        </span>
+        <span className={`dns-status-badge ${v}`}>{statusLabel(result.status)}</span>
       </div>
-      <div className="px-4 py-3 flex flex-col gap-2">
-        {result.record && (
-          <p className="text-xs font-mono text-gray-600 bg-gray-50 rounded px-2 py-1.5 break-all">
-            {result.record}
-          </p>
-        )}
-        {result.message && (
-          <p className="text-sm text-gray-500 leading-snug">{result.message}</p>
-        )}
+      <div className="dns-card-body">
+        {result.record && <div className="dns-record-mono">{result.record}</div>}
+        {result.message && <p className="dns-msg">{result.message}</p>}
         {result.suggested_record && (
-          <div className="flex items-start gap-2 mt-1">
-            <p className="text-xs font-mono text-gray-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-1.5 flex-1 break-all">
-              {result.suggested_record}
-            </p>
+          <div className="dns-suggested-row">
+            <div className="dns-suggested-mono">{result.suggested_record}</div>
             <CopyButton text={result.suggested_record} />
           </div>
         )}
@@ -96,8 +286,6 @@ function RecordCard({ title, result }) {
     </div>
   );
 }
-
-/* ─── main page ─────────────────────────────────────────── */
 
 export default function DnsDoctor() {
   const [domain, setDomain] = useState('');
@@ -109,87 +297,110 @@ export default function DnsDoctor() {
   const runCheck = async (e) => {
     e.preventDefault();
     if (!domain.trim()) return;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const params = new URLSearchParams({ domain: domain.trim() });
       if (dkimSelector.trim()) params.set('dkim_selector', dkimSelector.trim());
       const data = await api.get(`/dns-doctor/check?${params.toString()}`);
       setResult(data);
     } catch (err) {
-      setError(err.message || 'Check failed');
-      setResult(null);
+      setError(err.message || 'Check failed'); setResult(null);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="mx-auto min-h-0 max-w-3xl flex-1 space-y-6 overflow-y-auto p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">DNS Doctor</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Check SPF, DKIM, and DMARC records for a sending domain.
-        </p>
-      </div>
+    <>
+      <style>{css}</style>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, overflow: 'hidden' }}>
 
-      <form onSubmit={runCheck} className="space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <RiGlobalLine size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        {/* Hero */}
+        <div className="do-hero" style={{ borderRadius: 0 }}>
+          <div className="do-hero-eyebrow">InboxAir · Tools</div>
+          <div className="do-hero-title">DNS Records</div>
+          <div className="do-hero-sub">
+            Full deliverability audit — SPF, DKIM, DMARC, MTA-STS, TLS-RPT, BIMI, DNSSEC, and blacklist status.
+          </div>
+          <form onSubmit={runCheck} className="dns-hero-form">
+            <div className="dns-input-row">
+              <div className="dns-input-wrap">
+                <RiGlobalLine size={17} />
+                <input
+                  type="text" className="dns-input"
+                  value={domain} onChange={e => setDomain(e.target.value)}
+                  placeholder="example.com" autoComplete="off" spellCheck={false}
+                />
+              </div>
+              <button
+                type="submit" disabled={loading || !domain.trim()}
+                className="do-btn-hero"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}
+              >
+                <RiSearchLine size={15} />
+                {loading ? 'Checking…' : 'Check'}
+              </button>
+            </div>
             <input
-              type="text"
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              placeholder="example.com"
-              className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              type="text" className="dns-input-selector"
+              value={dkimSelector} onChange={e => setDkimSelector(e.target.value)}
+              placeholder="DKIM selector (optional — e.g. google, s1, default)"
+              autoComplete="off" spellCheck={false}
             />
-          </div>
-          <button
-            type="submit"
-            disabled={loading || !domain.trim()}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors flex-shrink-0"
-          >
-            <RiSearchLine size={16} />
-            {loading ? 'Checking…' : 'Check'}
-          </button>
+          </form>
         </div>
-        <input
-          type="text"
-          value={dkimSelector}
-          onChange={(e) => setDkimSelector(e.target.value)}
-          placeholder="DKIM selector (optional — e.g. from your provider's docs)"
-          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-        />
-      </form>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', background: 'var(--do-bg)' }}>
+          <div className="dns-body">
 
-      {result && (
-        <div className="space-y-4">
-          <div className={`rounded-xl border px-4 py-3 ${statusColor(result.overall_status).border} ${statusColor(result.overall_status).bg}`}>
-            <span className={`text-sm font-semibold ${statusColor(result.overall_status).text}`}>
-              {result.domain} — {statusLabel(result.overall_status)}
-            </span>
+            {error && (
+              <div className="dns-error"><strong>Check failed:</strong> {error}</div>
+            )}
+
+            {loading && (
+              <div className="dns-loading">
+                <div className="dns-spinner" />
+                <p>Running DNS checks for <strong>{domain}</strong>…</p>
+              </div>
+            )}
+
+            {result && !loading && (
+              <div>
+                <HealthScoreHeader score={result.health_score} grade={result.health_grade} domain={result.domain} />
+                <div className={`dns-overall-banner ${statusVariant(result.overall_status)}`}>
+                  <RiShieldCheckLine size={15} />
+                  {result.domain} — {statusLabel(result.overall_status)}
+                </div>
+                <RecordCard title="SPF"       result={result.spf} />
+                <RecordCard title="DKIM"      result={result.dkim} />
+                <RecordCard title="DMARC"     result={result.dmarc} />
+                <RecordCard title="MTA-STS"   result={result.mta_sts} />
+                <RecordCard title="TLS-RPT"   result={result.tls_rpt} />
+                <RecordCard title="BIMI"      result={result.bimi} />
+                <RecordCard title="DNSSEC"    result={result.dnssec} />
+                <RecordCard
+                  title="Blacklist"
+                  result={{
+                    status: result.blacklist.status,
+                    record: result.blacklist.ip ? `IP: ${result.blacklist.ip}` : null,
+                    message: result.blacklist.message,
+                    suggested_record: null,
+                  }}
+                />
+              </div>
+            )}
+
+            {!result && !loading && !error && (
+              <div className="dns-empty">
+                <RiGlobalLine size={52} className="dns-empty-icon" />
+                <h3>Enter a domain to audit</h3>
+                <p>We'll check SPF, DKIM, DMARC, blacklists, and more — then score your deliverability health.</p>
+              </div>
+            )}
           </div>
-          <RecordCard title="SPF" result={result.spf} />
-          <RecordCard title="DKIM" result={result.dkim} />
-          <RecordCard title="DMARC" result={result.dmarc} />
-          <RecordCard
-            title="Blacklist"
-            result={{
-              status: result.blacklist.status,
-              record: result.blacklist.ip ? `IP: ${result.blacklist.ip}` : null,
-              message: result.blacklist.message,
-              suggested_record: null,
-            }}
-          />
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }

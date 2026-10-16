@@ -1,4 +1,4 @@
-"""Remote MCP (Streamable HTTP) for Quickly leads — mounted at ``/api/mcp``."""
+"""Remote MCP (Streamable HTTP) for DevOutreach leads — mounted at ``/api/mcp``."""
 
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ from app.database import AsyncSessionLocal
 from app.auth import try_resolve_user_for_mcp
 from app.settings_manager import settings as app_settings
 
-log = logging.getLogger("quickly.mcp_leads")
+log = logging.getLogger("devoutreach.mcp_leads")
 
 leads_mcp = FastMCP(
-    "quickly-leads",
+    "devoutreach-leads",
     instructions=(
         "Emissary leads API tools. Authenticate MCP HTTP requests with X-API-Key "
         "(Settings → API Keys) or Authorization: Bearer (JWT)."
